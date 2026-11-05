@@ -1,0 +1,30 @@
+{
+  "name": "om-ridhi-sidhi-stationery-shop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Full-stack stationery shop with owner dashboard and physical pickup reservations",
+  "scripts": {
+    "start": "node backend/src/server.js",
+    "dev": "nodemon backend/src/server.js",
+    "check": "node --check backend/src/server.js && node --check backend/src/routes/api.js && node --check backend/src/middleware.js && node --check assets/js/app.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.13.1",
+    "@aws-sdk/client-s3": "^3.800.0",
+    "@aws-sdk/s3-request-presigner": "^3.800.0",
+    "multer": "^2.0.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  }
+}
