@@ -1,3 +1,4 @@
+
 {
   "name": "om-ridhi-sidhi-stationery-shop",
   "version": "1.0.0",
@@ -6,7 +7,7 @@
   "scripts": {
     "start": "node backend/src/server.js",
     "dev": "nodemon backend/src/server.js",
-    "check": "node --check backend/src/server.js && node --check backend/src/routes/api.js && node --check backend/src/middleware.js && node --check assets/js/app.js"
+    "check": "node --check backend/src/server.js && node --check backend/src/db.js && node --check backend/src/middleware.js && node --check backend/src/routes/api.js && node --check backend/src/storage/r2.js && node --check backend/src/jobs/expire-reservations.js && node --check assets/js/app.js"
   },
   "engines": {
     "node": ">=20"
