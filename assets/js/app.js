@@ -1,4 +1,3 @@
-
 /* ==========================================================
    OM RIDHI SIDHI — FULL STACK STOREFRONT
    Frontend application
@@ -285,7 +284,7 @@ function shell(title, description, content) {
 
     bindShared();
     icons();
- return Promise.resolve();
+    return Promise.resolve();
 }
 
 function bindShared() {
@@ -335,7 +334,7 @@ function errorState(error) {
             </button>
         </div>
     `;
-         }
+}
 
 /* ==========================================================
    PART 2 — STOREFRONT AND CUSTOMER FEATURES
@@ -357,7 +356,8 @@ function productImage(product) {
 
 function productCard(product) {
     const liked = Boolean(product.is_liked);
-    const favourite = Boolean(product.is_favourite);
+    const favourite = Boolean(product.is_favourite) ||
+        favourites.some(item => String(item.id) === String(product.id));
 
     return `
         <article class="product-card">
@@ -442,7 +442,7 @@ async function loadFavourites() {
 
 function bindProductActions(container = document) {
     container.querySelectorAll('[data-like]').forEach(button => {
-        button.addEventListener('click', async () => {
+               button.addEventListener('click', async () => {
             if (!signedIn()) {
                 location.href = link('customer/login.html');
                 return;
@@ -785,7 +785,7 @@ async function initCustomer() {
                                 <p>Quantity: ${safe(r.quantity)}</p>
                                 <p>Status: ${safe(r.status)}</p>
 
-                                ${['Request Sent', 'Reserved'].includes(r.status)
+                                ${r.status === 'Request Sent'
                                     ? `<button class="btn btn-dark"
                                         data-cancel-reservation="${safe(r.id)}">
                                         Cancel request
@@ -858,8 +858,7 @@ async function initCustomer() {
             shell('My Profile', '', errorState(error));
         }
     }
-}
-
+                   }
 function signOut() {
     localStorage.removeItem(TOKEN_KEY);
     currentUser = null;
@@ -1286,8 +1285,7 @@ async function initOwner() {
                         <input name="stockQuantity" type="number" min="0" value="0">
                     </label>
 
-                    <label class="field full">
-                        Description
+                    <label class="field full">                        Description
                         <textarea name="description"></textarea>
                     </label>
 
@@ -1608,7 +1606,7 @@ async function initOwner() {
 
 /* -------------------------
    OWNER SETTINGS
-   
+
 ------------------------- */
  /* -------------------------
    OWNER SETTINGS
@@ -1733,6 +1731,7 @@ async function startApp() {
 
     await loadSettings();
     await loadCurrentUser();
+    await loadFavourites();
 
     if (path.includes('/owner/')) {
         try {
@@ -1776,5 +1775,3 @@ document.addEventListener('DOMContentLoaded', () => {
         );
     });
 });
-                          
-                    
