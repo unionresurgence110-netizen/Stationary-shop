@@ -1,0 +1,20 @@
+require('dotenv').config();
+const express=require('express'),cors=require('cors'),helmet=require('helmet'),rateLimit=require('express-rate-limit'),path=require('path');
+const app=express();
+const origins=(process.env.CORS_ORIGIN||'http://localhost:3000').split(',').map(x=>x.trim()).filter(Boolean);
+app.use(helmet({crossOriginResourcePolicy:{policy:'cross-origin'}}));
+app.use(cors({origin(origin,cb){if(!origin||origins.includes(origin))return cb(null,true);cb(new Error('Origin not allowed'));},credentials:true}));
+app.use(express.json({limit:'1mb'}));
+app.use('/api',rateLimit({windowMs:15*60*1000,max:300}));
+app.use('/api/auth',rateLimit({windowMs:15*60*1000,max:20}));
+app.use('/api',require('./routes/api'));
+app.get('/api/health',(req,res)=>res.json({ok:true,service:'OM RIDHI SIDHI API'}));
+app.use(express.static(path.join(__dirname,'../../')));
+app.use((err,req,res,next)=>{console.error(err);if(err.code==='23505')return res.status(409).json({error:'This record already exists.'});if(err.code==='23503')return res.status(400).json({error:'Referenced record does not exist.'});res.status(err.status||500).json({error:err.status?err.message:'Something went wrong.'});});
+const port=process.env.PORT||3000;
+const server=app.listen(port,()=>console.log(`OM RIDHI SIDHI listening on ${port}`));
+// Reservation expiry is run in-process every 5 minutes; multiple replicas are safe via row locks.
+const {expireReservations}=require('./jobs/expire-reservations');
+const timer=setInterval(()=>expireReservations().catch(e=>console.error('Reservation expiry worker:',e)),5*60*1000);
+timer.unref();
+module.exports={app,server};
