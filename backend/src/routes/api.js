@@ -145,6 +145,31 @@ router.post('/auth/login',wrap(async(req,res)=>{
 // ==========================================
 // CUSTOMER INTERACTIONS
 // ==========================================
+// Permanently delete the signed-in customer's account after password verification.
+router.delete('/customer/account',auth,wrap(async(req,res)=>{
+ if(req.user.role==='admin')return res.status(403).json({error:'Owner accounts cannot be deleted from the customer profile.'});
+ const password=String(req.body.password||'');
+ if(!password)return res.status(400).json({error:'Current password is required.'});
+ const user=await query('SELECT id,password_hash FROM users WHERE id=$1 AND role=\'customer\' AND is_active=TRUE',[req.user.id]);
+ if(!user.rowCount||!await bcrypt.compare(password,user.rows[0].password_hash)){
+  return res.status(401).json({error:'Current password is incorrect.'});
+ }
+ const client=await pool.connect();
+ try{
+  await client.query('BEGIN');
+  // These two tables intentionally use SET NULL in the schema, so remove the
+  // user's own content explicitly rather than leaving anonymized records.
+  await client.query('DELETE FROM shop_reviews WHERE user_id=$1',[req.user.id]);
+  await client.query('DELETE FROM suggestions WHERE user_id=$1',[req.user.id]);
+  await client.query('DELETE FROM users WHERE id=$1',[req.user.id]);
+  await client.query('COMMIT');
+  res.json({deleted:true});
+ }catch(error){
+  await client.query('ROLLBACK');
+  throw error;
+ }finally{client.release();}
+}));
+
 
 router.post('/products/:id/like',auth,wrap(async(req,res)=>{
  await query('INSERT INTO product_likes(user_id,product_id) VALUES($1,$2) ON CONFLICT DO NOTHING',[req.user.id,req.params.id]);
