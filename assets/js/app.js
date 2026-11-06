@@ -3,7 +3,7 @@
    Frontend application
    ========================================================== */
 
-const API_BASE = '/api';
+const API_BASE = 'https://om-ridhi-sidhi.onrender.com/api';
 const TOKEN_KEY = 'ors-auth-token';
 const THEME_KEY = 'ors-theme';
 
