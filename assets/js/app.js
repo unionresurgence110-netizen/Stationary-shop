@@ -203,66 +203,40 @@ function header() {
     `;
 }
 
-function footer() {
-    const socials = cfg.socials || {};
-
-    const socialItems = [
-        ['instagram', socials.instagram],
-        ['facebook', socials.facebook],
-        ['message-circle', socials.whatsapp],
-        ['music-2', socials.tiktok]
-    ].filter(x => x[1]);
-
-    return `
-        <footer class="footer">
-            <div class="footer-main">
-
-                <div>
-                    ${brand()}
-                    <p>${safe(cfg.description)}</p>
-                    <div class="socials">
-                        ${socialItems.map(([ic, url]) => `
-                            <a href="${safe(url)}"
-                               target="_blank"
-                               rel="noopener noreferrer">
-                                ${icon(ic)}
-                            </a>
-                        `).join('')}
-                    </div>
-                </div>
-
-                <div>
-                    <h3>Explore</h3>
-                    <a href="${link('pages/products.html')}">Products</a>
-                    <a href="${link('pages/offers.html')}">Offers</a>
-                    <a href="${link('pages/updates.html')}">Updates</a>
-                    <a href="${link('pages/suggestions.html')}">Suggestions</a>
-                </div>
-
-                <div>
-                    <h3>Information</h3>
-                    <a href="${link('pages/about.html')}">About us</a>
-                    <a href="${link('pages/guides.html')}">Shop guides</a>
-                    <a href="${link('pages/reviews.html')}">Reviews</a>
-                    <a href="${link('pages/privacy.html')}">Privacy</a>
-                </div>
-
-                <div>
-                    <h3>Contact</h3>
-                    ${cfg.phone ? `<p>${safe(cfg.phone)}</p>` : ''}
-                    ${cfg.email ? `<p>${safe(cfg.email)}</p>` : ''}
-                    ${cfg.address ? `<p>${safe(cfg.address)}</p>` : ''}
-                </div>
-
-            </div>
-
-            <div class="footer-bottom">
-                <span>© ${new Date().getFullYear()}
-                    ${safe(cfg.name)} ${safe(cfg.suffix)}</span>
-                <span>Made for your everyday needs.</span>
-            </div>
-        </footer>
-    `;
+function footer(){
+ const tel=cfg.phone.replace(/[^+\d]/g,'');
+ const socials=cfg.socials||{};
+ const socialItems=[
+  ['instagram',socials.instagram,'Instagram'],
+  ['facebook',socials.facebook,'Facebook'],
+  ['message-circle',socials.whatsapp,'WhatsApp'],
+  ['music-2',socials.tiktok,'TikTok']
+ ].filter(x=>x[1]);
+ return `<footer class="footer premium-footer">
+  <div class="footer-main premium-footer-main">
+   <div class="footer-intro">
+    <span class="footer-kicker">WELCOME TO OUR SHOP</span>
+    <h2>Little things.<br><span>Big smiles.</span></h2>
+    <p>${safe(cfg.description)}</p>
+    <a class="footer-explore-btn" href="${link('pages/products.html')}">Explore our collection ${icon('arrow-up-right')}</a>
+    ${socialItems.length?`<div class="socials premium-socials">${socialItems.map(([ic,url,label])=>`<a href="${safe(url)}" target="_blank" rel="noopener noreferrer" aria-label="${label}">${icon(ic)}</a>`).join('')}</div>`:''}
+   </div>
+   <div class="footer-column"><h3>Explore</h3><span class="footer-heading-line"></span>
+    <a href="${link('index.html')}">Home</a><a href="${link('pages/products.html')}">Shop Products</a><a href="${link('pages/offers.html')}">Latest Offers</a><a href="${link('pages/suggestions.html')}">Suggestions</a><a href="${link('pages/reviews.html')}">Shop Reviews</a>
+   </div>
+   <div class="footer-column"><h3>Customer Corner</h3><span class="footer-heading-line"></span>
+    <a href="${link('customer/login.html')}">My Account</a><a href="${link('customer/favourites.html')}">My Favourites</a><a href="${link('pages/guides.html')}">How It Works</a><a href="${link('pages/about.html')}">About Our Shop</a><a href="${link('pages/privacy.html')}">Privacy Policy</a>
+   </div>
+   <div class="footer-column footer-contact"><h3>Get In Touch</h3><span class="footer-heading-line"></span>
+    ${cfg.phone?`<div class="footer-contact-item">${icon('phone')}<div><small>Call us</small><a href="tel:${safe(tel)}">${safe(cfg.phone)}</a><button class="copy-phone" type="button" data-copy-phone>Copy number ${icon('copy')}</button></div></div>`:''}
+    ${cfg.email?`<div class="footer-contact-item">${icon('mail')}<div><small>Email us</small><a href="mailto:${safe(cfg.email)}">${safe(cfg.email)}</a></div></div>`:''}
+    ${cfg.address?`<div class="footer-contact-item">${icon('map-pin')}<div><small>Visit our shop</small><p>${safe(cfg.address)}</p></div></div>`:''}
+    <div class="footer-contact-note">${icon('heart')}<span>We look forward to serving you!</span></div>
+   </div>
+  </div>
+  <div class="premium-footer-message"><span class="footer-star">✦</span><p>Making everyday creativity a little more special.</p><span class="footer-star">✦</span></div>
+  <div class="footer-bottom premium-footer-bottom"><span>© ${new Date().getFullYear()} ${safe(cfg.name)} ${safe(cfg.suffix)}. All rights reserved.</span><span class="footer-made">Made with <span>♥</span> for creativity</span></div>
+ </footer>`;
 }
 
 function shell(title, description, content) {
@@ -527,6 +501,19 @@ function bindProductActions(container = document) {
 }
 
 async function initHome() {
+    // Preserve the original design-reference banner and premium footer.
+    const hero = $('.hero');
+    if (hero) {
+        if (cfg.bannerImage) {
+            const bannerUrl = String(cfg.bannerImage).replace(/[\\'"\n\r]/g, '');
+            hero.style.backgroundImage = `linear-gradient(90deg,rgba(12,24,62,.78),rgba(24,48,111,.20)),url('${bannerUrl}')`;
+        }
+        hero.classList.add('shop-banner-responsive');
+    }
+
+    const existingFooter = $('.footer');
+    if (existingFooter) existingFooter.outerHTML = footer();
+
     const featured = $('#featured-grid');
     const recommended = $('#recommend-grid');
     const categoryGrid = $('#category-grid');
