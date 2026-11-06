@@ -249,3 +249,46 @@ html,body{max-width:100%;overflow-x:hidden}
 }
 
 @media(max-width:620px){.info-strip{margin-left:18px;margin-right:18px}.search-wrap{padding-left:18px;padding-right:18px}.section-heading .text-link{white-space:nowrap;font-size:11px}}
+
+/* Final card regression guard: keep category and product tags compact pills. */
+.product-image{position:relative;display:block;isolation:isolate;overflow:hidden;aspect-ratio:1.18/1;min-height:0;height:auto}
+.product-image>img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block}
+.product-image>.product-placeholder{position:absolute;inset:0;width:100%;height:100%;display:grid;place-items:center}
+.product-image .product-badges{position:absolute!important;left:12px!important;top:12px!important;right:58px!important;bottom:auto!important;z-index:3;display:flex!important;flex-direction:row!important;flex-wrap:wrap;align-items:flex-start;gap:5px;width:auto!important;height:auto!important;max-width:calc(100% - 72px);writing-mode:horizontal-tb!important;transform:none!important;pointer-events:none}
+.product-image .product-category-pill,.product-image .product-tag-badge{position:static!important;display:inline-flex!important;align-items:center;flex:0 1 auto;width:auto!important;height:auto!important;min-width:0!important;max-width:100%;min-height:0!important;margin:0!important;padding:5px 8px!important;border:1px solid rgba(255,255,255,.78);border-radius:999px!important;background:rgba(23,35,60,.88)!important;color:#f4f6ff!important;font-size:10px!important;font-weight:800;line-height:1.2!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;writing-mode:horizontal-tb!important;transform:none!important;box-shadow:0 3px 10px rgba(10,20,45,.12)}
+.product-image .product-tag-badge{background:rgba(255,255,255,.94)!important;color:#344d9b!important;border-color:rgba(255,255,255,.9)}
+.product-image .heart-btn{position:absolute!important;top:11px!important;right:11px!important;left:auto!important;bottom:auto!important;z-index:4;width:39px!important;height:39px!important;min-width:39px!important;min-height:39px!important;border-radius:50%!important}
+.product-info{min-width:0;display:flex;flex:1;flex-direction:column;gap:0}
+.product-info h3{overflow-wrap:anywhere;min-height:2.7em}
+.product-card-bottom{width:100%;min-width:0;gap:9px}
+.product-reserve-btn{min-width:0;white-space:nowrap}
+.product-info .like-btn{flex:0 0 auto}
+.ors-dialog-backdrop{z-index:12000;pointer-events:none}
+.ors-dialog-backdrop.is-open{pointer-events:auto}
+.ors-dialog{position:relative;z-index:1;pointer-events:auto}
+.ors-dialog .dialog-actions{position:relative;z-index:2}
+.ors-dialog .dialog-actions button{min-width:92px;pointer-events:auto;touch-action:manipulation}
+.btn-danger{background:#b83248;color:#fff;border:0}
+.account-danger-zone{border-color:rgba(184,50,72,.35)}
+.account-danger-zone p{font-size:13px;line-height:1.65;color:var(--muted);max-width:720px}
+@media(max-width:620px){
+ .product-image{aspect-ratio:1.08/1;min-height:0}
+ .product-image .product-badges{left:9px!important;top:9px!important;right:53px!important;gap:4px}
+ .product-image .product-category-pill,.product-image .product-tag-badge{font-size:9px!important;padding:4px 7px!important}
+ .product-image .heart-btn{top:9px!important;right:9px!important;width:35px!important;height:35px!important;min-width:35px!important;min-height:35px!important}
+ .product-card-bottom{gap:6px}
+ .product-reserve-btn{padding-left:7px;padding-right:7px;font-size:10px}
+ .product-info .like-btn{min-width:44px;min-height:37px;padding:5px 7px}
+}
+.visually-hidden-native-select{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
+.custom-dropdown{position:relative;min-width:0}
+.dropdown-trigger{width:100%;min-height:44px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);font-size:12px;font-weight:700;text-align:left}
+.dropdown-trigger>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dropdown-trigger>span:last-child{flex:none;color:var(--muted);font-size:18px}
+.dropdown-menu{display:none;position:absolute;top:calc(100% + 7px);left:0;right:0;z-index:100;padding:6px;background:var(--surface);border:1px solid var(--line);border-radius:13px;box-shadow:var(--shadow);max-height:240px;overflow:auto}
+.custom-dropdown.open .dropdown-menu{display:block}
+.dropdown-menu button{display:block;width:100%;padding:10px;border:0;border-radius:8px;background:transparent;color:var(--ink);font-size:12px;text-align:left}
+.dropdown-menu button.selected,.dropdown-menu button:hover{background:var(--soft);color:var(--primary2);font-weight:800}
+#home-search .custom-dropdown{flex:0 1 190px}
+#product-filter .custom-dropdown{width:100%}
+@media(max-width:620px){#home-search .custom-dropdown{flex:1 1 100%;width:100%}}
