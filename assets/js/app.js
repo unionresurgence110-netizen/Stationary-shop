@@ -795,6 +795,98 @@ function enhanceCustomSelect(select) {
     sync();
 }
 
+function openProductSuggestionDialog(productName = '') {
+    if (!signedIn()) {
+        toast('Please sign in to suggest a product.', 'error');
+        const next = `${location.pathname}${location.search}`;
+        location.href = `${link('customer/login.html')}?next=${encodeURIComponent(next)}`;
+        return;
+    }
+
+    let modal = $('#ors-search-suggestion-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'ors-search-suggestion-modal';
+        modal.className = 'ors-dialog-backdrop';
+        modal.innerHTML = `
+            <form class="ors-dialog search-suggestion-dialog" novalidate>
+                <span class="dialog-icon">${icon('lightbulb')}</span>
+                <h2>Suggest this product</h2>
+                <p>Tell the shop which product you would like to see. The product name is filled from your search.</p>
+                <label class="field">Product name
+                    <input name="title" type="text" maxlength="120" autocomplete="off" placeholder="Product name">
+                </label>
+                <label class="field">A few details
+                    <textarea name="details" rows="4" maxlength="1500" placeholder="Brand, size, colour or any details that may help the shop..."></textarea>
+                </label>
+                <p class="dialog-error" aria-live="polite"></p>
+                <div class="dialog-actions">
+                    <button type="button" class="btn btn-light" data-cancel>Cancel</button>
+                    <button type="submit" class="btn btn-primary">Submit suggestion</button>
+                </div>
+            </form>`;
+        document.body.appendChild(modal);
+    }
+
+    const form = modal.querySelector('form');
+    const title = form.elements.title;
+    const details = form.elements.details;
+    const error = modal.querySelector('.dialog-error');
+    const cancel = modal.querySelector('[data-cancel]');
+    title.value = productName || '';
+    details.value = '';
+    error.textContent = '';
+
+    const close = () => {
+        modal.classList.remove('is-open');
+        form.removeEventListener('submit', submit);
+        cancel.removeEventListener('click', cancelDialog);
+        modal.removeEventListener('click', backdropClick);
+        document.removeEventListener('keydown', escapeKey);
+    };
+    const cancelDialog = event => { event?.preventDefault(); close(); };
+    const backdropClick = event => { if (event.target === modal) close(); };
+    const escapeKey = event => { if (event.key === 'Escape' && modal.classList.contains('is-open')) close(); };
+    const submit = async event => {
+        event.preventDefault();
+        const cleanTitle = title.value.trim();
+        const cleanDetails = details.value.trim();
+        if (!cleanTitle) {
+            error.textContent = 'Please enter the product name.';
+            title.focus();
+            return;
+        }
+        if (cleanDetails.length < 5) {
+            error.textContent = 'Please add a few details (at least 5 characters).';
+            details.focus();
+            return;
+        }
+        const submitButton = form.querySelector('[type="submit"]');
+        submitButton.disabled = true;
+        submitButton.textContent = 'Submitting…';
+        try {
+            await api('/customer/suggestions', {
+                method: 'POST',
+                body: { title: cleanTitle, details: cleanDetails }
+            });
+            close();
+            toast('Your product suggestion has been sent. Thank you!');
+        } catch (requestError) {
+            error.textContent = requestError.message || 'Could not submit your suggestion. Please try again.';
+        } finally {
+            submitButton.disabled = false;
+            submitButton.textContent = 'Submit suggestion';
+        }
+    };
+
+    form.addEventListener('submit', submit);
+    cancel.addEventListener('click', cancelDialog);
+    modal.addEventListener('click', backdropClick);
+    document.addEventListener('keydown', escapeKey);
+    modal.classList.add('is-open');
+    requestAnimationFrame(() => title.focus());
+}
+
 function bindHomeSearch() {
     const form = $('#home-search');
     if (!form) return;
@@ -802,28 +894,51 @@ function bindHomeSearch() {
     const results = $('#home-search-results');
     if (!input || !results) return;
 
-    // Keep the home search on the home page and let customers filter by category.
     let categorySelect = form.querySelector('[name="category"]');
     if (!categorySelect) {
         categorySelect = document.createElement('select');
         categorySelect.name = 'category';
         categorySelect.setAttribute('aria-label', 'Search category');
-        categorySelect.type = 'button';
         categorySelect.className = 'home-search-category';
         categorySelect.innerHTML = '<option value="">All categories</option>' +
             categories.map(c => `<option value="${safe(c.name)}">${safe(c.name)}</option>`).join('');
         form.insertBefore(categorySelect, form.querySelector('button[type="submit"]'));
     }
     enhanceCustomSelect(categorySelect);
+
+    let error = $('#home-search-error');
+    if (!error) {
+        error = document.createElement('p');
+        error.id = 'home-search-error';
+        error.className = 'home-search-error hidden';
+        error.setAttribute('role', 'alert');
+        error.textContent = 'Please enter a product name to search.';
+        form.insertAdjacentElement('afterend', error);
+    }
+
     let timer;
-    const search = async () => {
+    let requestId = 0;
+    const search = async ({validate = false} = {}) => {
         const q = input.value.trim();
         const category = categorySelect.value;
-        if (!q && !category) { results.classList.add('hidden'); results.innerHTML = ''; return; }
+        if (!q) {
+            results.classList.add('hidden');
+            results.innerHTML = '';
+            if (validate) {
+                error.classList.remove('hidden');
+                input.setAttribute('aria-invalid', 'true');
+                input.focus();
+            }
+            return;
+        }
+        error.classList.add('hidden');
+        input.removeAttribute('aria-invalid');
+        const currentRequest = ++requestId;
         results.classList.remove('hidden');
         results.innerHTML = '<div class="search-result-status">Searching products…</div>';
         try {
             const items = await getProducts({q, category});
+            if (currentRequest !== requestId) return;
             products = items;
             if (items.length) {
                 results.innerHTML = `<div class="home-search-result-grid">${items.slice(0, 6).map(productCard).join('')}</div>` +
@@ -831,27 +946,40 @@ function bindHomeSearch() {
                 bindProductActions(results);
                 icons();
             } else {
-                results.innerHTML = `<div class="search-empty-state"><strong>No products found</strong><p>We couldn't find “${safe(q || category)}”. You can suggest this product to the shop.</p><button class="btn btn-primary" type="button" data-suggest-missing>Suggest this product</button></div>`;
-                results.querySelector('[data-suggest-missing]').addEventListener('click', async () => {
-                    if (!signedIn()) { location.href = `customer/login.html?next=${encodeURIComponent('../pages/suggestions.html')}`; return; }
-                    try {
-                        await api('/customer/suggestions', {method:'POST', body:{title:q || category, details:'Suggested from the home page search.'}});
-                        toast('Suggestion sent to the shop. Thank you!');
-                        results.classList.add('hidden');
-                    } catch (error) { toast(error.message, 'error'); }
-                });
+                results.innerHTML = `<div class="search-empty-state"><strong>No products found</strong><p>We couldn't find “${safe(q)}”. Would you like to request this product from the shop?</p><button class="btn btn-primary" type="button" data-suggest-missing>＋ Add to suggestions</button></div>`;
+                results.querySelector('[data-suggest-missing]').addEventListener('click', () => openProductSuggestionDialog(q));
             }
-        } catch (error) {
-            results.innerHTML = `<div class="search-result-status">${safe(error.message || 'Search is temporarily unavailable.')}</div>`;
+        } catch (searchError) {
+            if (currentRequest !== requestId) return;
+            results.innerHTML = `<div class="search-result-status">${safe(searchError.message || 'Search is temporarily unavailable.')}</div>`;
         }
     };
-    input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(search, 250); });
-    categorySelect.addEventListener('change', search);
-    form.addEventListener('submit', event => { event.preventDefault(); search(); });
+
+    input.addEventListener('input', () => {
+        clearTimeout(timer);
+        error.classList.add('hidden');
+        input.removeAttribute('aria-invalid');
+        if (!input.value.trim()) {
+            requestId++;
+            results.classList.add('hidden');
+            results.innerHTML = '';
+            return;
+        }
+        timer = setTimeout(() => search(), 350);
+    });
+    categorySelect.addEventListener('change', () => {
+        if (input.value.trim()) search();
+    });
+    form.addEventListener('submit', event => {
+        event.preventDefault();
+        clearTimeout(timer);
+        search({validate: true});
+    });
     document.addEventListener('click', event => {
-        if (!form.contains(event.target)) results.classList.add('hidden');
+        if (!form.contains(event.target) && !results.contains(event.target)) results.classList.add('hidden');
     });
 }
+
 async function initProducts() {
     const params = new URLSearchParams(location.search);
 
@@ -879,12 +1007,8 @@ async function initProducts() {
                 <button class="btn btn-primary" type="button" data-suggest-no-results>Suggest this product</button>
               </div>`;
 
-        content.querySelector('[data-suggest-no-results]')?.addEventListener('click', async () => {
-            if (!signedIn()) { location.href = link('customer/login.html'); return; }
-            try {
-                await api('/customer/suggestions', {method:'POST', body:{title:q || category || 'New product suggestion', details:'Suggested from the Our Products search.'}});
-                toast('Suggestion sent to the shop. Thank you!');
-            } catch (error) { toast(error.message, 'error'); }
+        content.querySelector('[data-suggest-no-results]')?.addEventListener('click', () => {
+            openProductSuggestionDialog(q);
         });
         bindProductActions(content);
         icons();
