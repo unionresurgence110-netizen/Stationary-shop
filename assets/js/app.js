@@ -110,6 +110,19 @@ function toast(message, type = 'info') {
     );
 }
 
+
+// Replace browser-native validation bubbles with the storefront's own message.
+document.addEventListener('invalid', event => {
+    event.preventDefault();
+    const field = event.target;
+    let message = 'Please check this field and try again.';
+    if (field.validity?.valueMissing) message = 'Please fill in this field.';
+    else if (field.validity?.typeMismatch) message = 'Please enter a valid value.';
+    else if (field.validity?.tooShort) message = `Please enter at least ${field.minLength} characters.`;
+    else if (field.validity?.rangeUnderflow || field.validity?.rangeOverflow) message = 'Please enter a value within the allowed range.';
+    toast(message, 'error');
+}, true);
+
 function icons() {
     if (window.lucide) window.lucide.createIcons();
 }
@@ -332,51 +345,40 @@ function productCard(product) {
     const liked = Boolean(product.is_liked);
     const favourite = Boolean(product.is_favourite) ||
         favourites.some(item => String(item.id) === String(product.id));
+    const description = String(product.description || '').trim();
 
     return `
-        <article class="product-card">
-
+        <article class="product-card" data-product-card
+                 data-product-name="${safe(product.name)}"
+                 data-product-description="${safe(description)}"
+                 data-product-category="${safe(product.category_name || 'General')}"
+                 data-product-price="${safe(money(product.price))}">
             <div class="product-image">
                 ${productImage(product)}
-
-                <button class="like-btn ${liked ? 'active' : ''}"
-                        data-like="${safe(product.id)}"
-                        aria-label="Like product">
-                    ${icon('heart')}
-                    <span>${Number(product.likes_count || 0)}</span>
-                </button>
+                <span class="product-category-pill">${safe(product.category_name || 'General')}</span>
+                <button class="heart-btn ${favourite ? 'active' : ''}"
+                        data-favourite="${safe(product.id)}"
+                        aria-label="${favourite ? 'Remove from favourites' : 'Add to favourites'}"
+                        type="button">${icon('heart')}</button>
             </div>
-
             <div class="product-info">
-                <span class="product-category">
-                    ${safe(product.category_name || 'General')}
-                </span>
-
                 <h3>${safe(product.name)}</h3>
-
-                <p>${safe(product.description || '')}</p>
-
-                <div class="product-price">
-                    <strong>${money(product.price)}</strong>
-                </div>
-
-                <div class="product-actions">
-
-                    <button class="btn btn-primary"
+                <strong class="product-price">${money(product.price)}</strong>
+                <div class="product-card-bottom">
+                    <button class="product-reserve-btn"
                             data-reserve="${safe(product.id)}"
-                            ${!product.is_available ||
-                              Number(product.stock_quantity) <= 0
-                              ? 'disabled' : ''}>
-                        Reserve
+                            type="button"
+                            ${!product.is_available || Number(product.stock_quantity) <= 0 ? 'disabled' : ''}>
+                        Reserve <span>↗</span>
                     </button>
-
-                    <button class="save-btn ${favourite ? 'active' : ''}"
-                            data-favourite="${safe(product.id)}"
-                            aria-label="Save favourite">
-                        ${icon('bookmark')}
+                    <button class="like-btn ${liked ? 'active' : ''}"
+                            data-like="${safe(product.id)}"
+                            type="button" aria-label="Like product">
+                        ${icon('thumbs-up')}
+                        <span class="like-count">${Number(product.likes_count || 0)}</span>
                     </button>
-
                 </div>
+                <span class="product-details-hint">Tap to view details <span>↗</span></span>
             </div>
         </article>
     `;
@@ -414,9 +416,145 @@ async function loadFavourites() {
     }
 }
 
+function openProductDetails(card) {
+    let sheet = $('#product-detail-sheet');
+    if (!sheet) {
+        sheet = document.createElement('div');
+        sheet.id = 'product-detail-sheet';
+        sheet.className = 'product-sheet-backdrop';
+        sheet.innerHTML = `
+            <section class="product-sheet" role="dialog" aria-modal="true"
+                     aria-labelledby="product-sheet-title">
+                <div class="sheet-grabber"></div>
+                <button class="sheet-close" type="button" aria-label="Close details">${icon('x')}</button>
+                <span class="sheet-category"></span>
+                <h2 id="product-sheet-title"></h2>
+                <strong class="sheet-price"></strong>
+                <p class="sheet-description"></p>
+                <button class="btn btn-primary sheet-done" type="button">Done</button>
+            </section>`;
+        document.body.appendChild(sheet);
+        sheet.addEventListener('click', e => {
+            if (e.target === sheet || e.target.closest('.sheet-close,.sheet-done')) closeProductDetails();
+        });
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') closeProductDetails();
+        });
+        icons();
+    }
+    sheet.querySelector('.sheet-category').textContent = card.dataset.productCategory;
+    sheet.querySelector('#product-sheet-title').textContent = card.dataset.productName;
+    sheet.querySelector('.sheet-price').textContent = card.dataset.productPrice;
+    const rawDescription = card.dataset.productDescription || 'No description is available for this product yet.';
+    const sentences = rawDescription.match(/[^.!?]+[.!?]?/g) || [rawDescription];
+    const compactDescription = rawDescription.length > 190
+        ? (sentences[0] || rawDescription).trim()
+        : sentences.slice(0, 2).join(' ').trim();
+    sheet.querySelector('.sheet-description').textContent = compactDescription;
+    sheet.classList.add('is-open');
+    document.body.classList.add('sheet-open');
+}
+function closeProductDetails() {
+    $('#product-detail-sheet')?.classList.remove('is-open');
+    document.body.classList.remove('sheet-open');
+}
+function askConfirmation(title, message, confirmLabel = 'Confirm') {
+    return new Promise(resolve => {
+        let modal = $('#ors-confirm-modal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'ors-confirm-modal';
+            modal.className = 'ors-dialog-backdrop';
+            modal.innerHTML = `
+                <section class="ors-dialog" role="dialog" aria-modal="true">
+                    <span class="dialog-icon">${icon('shield-check')}</span>
+                    <h2 class="confirm-title"></h2>
+                    <p class="confirm-message"></p>
+                    <div class="dialog-actions">
+                        <button type="button" class="btn btn-light" data-cancel>Cancel</button>
+                        <button type="button" class="btn btn-primary" data-confirm>Confirm</button>
+                    </div>
+                </section>`;
+            document.body.appendChild(modal);
+        }
+        modal.querySelector('.confirm-title').textContent = title;
+        modal.querySelector('.confirm-message').textContent = message;
+        modal.querySelector('[data-confirm]').textContent = confirmLabel;
+        const finish = value => {
+            modal.classList.remove('is-open');
+            modal.querySelector('[data-cancel]').onclick = null;
+            modal.querySelector('[data-confirm]').onclick = null;
+            modal.onclick = null;
+            resolve(value);
+        };
+        modal.querySelector('[data-cancel]').onclick = () => finish(false);
+        modal.querySelector('[data-confirm]').onclick = () => finish(true);
+        modal.onclick = event => { if (event.target === modal) finish(false); };
+        modal.classList.add('is-open');
+    });
+}
+
+function askReservationQuantity() {
+    return new Promise(resolve => {
+        let modal = $('#reservation-quantity-modal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'reservation-quantity-modal';
+            modal.className = 'ors-dialog-backdrop';
+            modal.innerHTML = `
+                <form class="ors-dialog" novalidate>
+                    <span class="dialog-icon">${icon('shopping-bag')}</span>
+                    <h2>Reserve for pickup</h2>
+                    <p>How many items would you like to reserve?</p>
+                    <label class="field">Quantity
+                        <input name="quantity" type="number" min="1" max="30" value="1" inputmode="numeric">
+                    </label>
+                    <p class="dialog-error" aria-live="polite"></p>
+                    <div class="dialog-actions">
+                        <button type="button" class="btn btn-light" data-cancel>Cancel</button>
+                        <button type="submit" class="btn btn-primary">Continue</button>
+                    </div>
+                </form>`;
+            document.body.appendChild(modal);
+        }
+        const form = modal.querySelector('form');
+        const input = form.elements.quantity;
+        const error = modal.querySelector('.dialog-error');
+        const finish = value => {
+            modal.classList.remove('is-open');
+            form.onsubmit = null;
+            modal.querySelector('[data-cancel]').onclick = null;
+            modal.onclick = null;
+            resolve(value);
+        };
+        input.value = '1';
+        error.textContent = '';
+        form.onsubmit = event => {
+            event.preventDefault();
+            const value = Number(input.value);
+            if (!Number.isInteger(value) || value < 1 || value > 30) {
+                error.textContent = 'Please enter a quantity from 1 to 30.';
+                return;
+            }
+            finish(value);
+        };
+        modal.querySelector('[data-cancel]').onclick = () => finish(null);
+        modal.onclick = event => { if (event.target === modal) finish(null); };
+        modal.classList.add('is-open');
+        input.focus();
+    });
+}
+
 function bindProductActions(container = document) {
+    container.querySelectorAll('[data-product-card]').forEach(card => {
+        card.addEventListener('click', event => {
+            if (event.target.closest('button, a, input, select')) return;
+            openProductDetails(card);
+        });
+    });
     container.querySelectorAll('[data-like]').forEach(button => {
-               button.addEventListener('click', async () => {
+        button.addEventListener('click', async event => {
+            event.stopPropagation();
             if (!signedIn()) {
                 location.href = link('customer/login.html');
                 return;
@@ -424,22 +562,28 @@ function bindProductActions(container = document) {
 
             const id = button.dataset.like;
             const active = button.classList.contains('active');
-
+            button.disabled = true;
             try {
                 const data = await api(`/products/${id}/like`, {
                     method: active ? 'DELETE' : 'POST'
                 });
-
                 button.classList.toggle('active', Boolean(data.liked));
-                toast(data.liked ? 'Liked!' : 'Like removed.');
+                const count = button.querySelector('.like-count');
+                if (count && Number.isFinite(Number(data.likes_count))) {
+                    count.textContent = String(data.likes_count);
+                }
+                toast(data.liked ? 'You liked this product.' : 'Like removed.');
             } catch (error) {
                 toast(error.message, 'error');
+            } finally {
+                button.disabled = false;
             }
         });
     });
 
     container.querySelectorAll('[data-favourite]').forEach(button => {
-        button.addEventListener('click', async () => {
+        button.addEventListener('click', async event => {
+            event.stopPropagation();
             if (!signedIn()) {
                 location.href = link('customer/login.html');
                 return;
@@ -474,24 +618,14 @@ function bindProductActions(container = document) {
                 return;
             }
 
-            const quantity = Number(
-                prompt('How many items would you like to reserve?', '1')
-            );
-
-            if (!Number.isInteger(quantity) || quantity < 1 || quantity > 30) {
-                toast('Choose a quantity from 1 to 30.', 'error');
-                return;
-            }
+            const quantity = await askReservationQuantity();
+            if (quantity === null) return;
 
             try {
                 await api('/reservations', {
                     method: 'POST',
-                    body: {
-                        productId: button.dataset.reserve,
-                        quantity
-                    }
+                    body: { productId: button.dataset.reserve, quantity }
                 });
-
                 toast('Pickup request sent successfully!');
             } catch (error) {
                 toast(error.message, 'error');
@@ -679,7 +813,7 @@ async function initProducts() {
             </form>
         </section>
 
-        <div id="products-content" class="product-grid"></div>
+        <div id="products-content" class="products-results"></div>
     `);
 
     $('#product-filter').addEventListener('submit', async event => {
@@ -1053,7 +1187,7 @@ async function initStatic() {
                 <section class="panel">
                     <h2>Suggest a product</h2>
 
-                    <form id="suggestion-form" class="form-grid">
+                    <form id="suggestion-form" class="form-grid" novalidate>
                         <label class="field full">
                             Title
                             <input name="title" required maxlength="120">
@@ -1090,6 +1224,11 @@ async function initStatic() {
             e.preventDefault();
 
             const fd = new FormData(e.currentTarget);
+            if (!String(fd.get('title') || '').trim()) {
+                toast('Please enter a product name before sending.', 'error');
+                e.currentTarget.querySelector('[name="title"]')?.focus();
+                return;
+            }
 
             try {
                 await api('/customer/suggestions', {
@@ -1318,7 +1457,7 @@ async function initOwner() {
 
             $$('[data-hide-product]').forEach(button => {
                 button.onclick = async () => {
-                    if (!confirm('Hide this product?')) return;
+                    if (!await askConfirmation('Hide product?', 'This product will no longer appear in the shop.', 'Hide product')) return;
 
                     try {
                         await api(`/owner/products/${button.dataset.hideProduct}`, {
@@ -1389,7 +1528,7 @@ async function initOwner() {
 
             $$('[data-delete-category]').forEach(button => {
                 button.onclick = async () => {
-                    if (!confirm('Delete this category?')) return;
+                    if (!await askConfirmation('Delete category?', 'This action cannot be undone. Continue?', 'Delete category')) return;
 
                     try {
                         await api(`/owner/categories/${button.dataset.deleteCategory}`, {
