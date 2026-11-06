@@ -346,6 +346,14 @@ function productCard(product) {
     const favourite = Boolean(product.is_favourite) ||
         favourites.some(item => String(item.id) === String(product.id));
     const description = String(product.description || '').trim();
+    const rawTags = Array.isArray(product.manual_tags) ? product.manual_tags : [];
+    const tags = rawTags.map(tag => String(tag).trim()).filter(Boolean);
+    if (product.manual_featured || product.featured) tags.unshift('Featured');
+    if (product.manual_best_seller) tags.unshift('Best Seller');
+    if (product.manual_most_liked) tags.unshift('Popular');
+    if (product.has_discount) tags.unshift('Offer');
+    if (product.created_at && Date.now() - new Date(product.created_at).getTime() < 7 * 86400000) tags.unshift('New');
+    const uniqueTags = [...new Set(tags)].slice(0, 3);
 
     return `
         <article class="product-card" data-product-card
@@ -355,7 +363,10 @@ function productCard(product) {
                  data-product-price="${safe(money(product.price))}">
             <div class="product-image">
                 ${productImage(product)}
-                <span class="product-category-pill">${safe(product.category_name || 'General')}</span>
+                <div class="product-badges">
+                    <span class="product-category-pill">${safe(product.category_name || 'General')}</span>
+                    ${uniqueTags.map(tag => `<span class="product-tag-badge">${safe(tag)}</span>`).join('')}
+                </div>
                 <button class="heart-btn ${favourite ? 'active' : ''}"
                         data-favourite="${safe(product.id)}"
                         aria-label="${favourite ? 'Remove from favourites' : 'Add to favourites'}"
@@ -520,31 +531,35 @@ function askReservationQuantity() {
         const form = modal.querySelector('form');
         const input = form.elements.quantity;
         const error = modal.querySelector('.dialog-error');
-        let completed = false;
+        let settled = false;
+        const cancel = event => { event?.preventDefault(); event?.stopPropagation(); finish(null); };
         const finish = value => {
-            if (completed) return;
-            completed = true;
+            if (settled) return;
+            settled = true;
             modal.classList.remove('is-open');
-            form.onsubmit = null;
-            modal.querySelector('[data-cancel]').onclick = null;
-            modal.onclick = null;
+            modal.removeEventListener('click', backdropClick);
+            form.removeEventListener('submit', submit);
+            modal.querySelector('[data-cancel]').removeEventListener('click', cancel);
             resolve(value);
         };
-        input.value = '1';
-        error.textContent = '';
-        form.onsubmit = event => {
+        const backdropClick = event => { if (event.target === modal) finish(null); };
+        const submit = event => {
             event.preventDefault();
             const value = Number(input.value);
             if (!Number.isInteger(value) || value < 1 || value > 30) {
                 error.textContent = 'Please enter a quantity from 1 to 30.';
+                input.focus();
                 return;
             }
             finish(value);
         };
-        modal.querySelector('[data-cancel]').onclick = event => { event.preventDefault(); event.stopImmediatePropagation(); finish(null); };
-        modal.onclick = event => { if (event.target === modal) finish(null); };
+        input.value = '1';
+        error.textContent = '';
+        form.addEventListener('submit', submit);
+        modal.querySelector('[data-cancel]').addEventListener('click', cancel);
+        modal.addEventListener('click', backdropClick);
         modal.classList.add('is-open');
-        input.focus();
+        requestAnimationFrame(() => input.focus());
     });
 }
 
@@ -733,6 +748,53 @@ async function initHome() {
     icons();
 }
 
+function enhanceCustomSelect(select) {
+    if (!select || select.dataset.customized === 'true') return;
+    select.dataset.customized = 'true';
+    const wrap = document.createElement('div');
+    wrap.className = 'custom-dropdown';
+    const trigger = document.createElement('button');
+    trigger.type = 'button';
+    trigger.className = 'dropdown-trigger';
+    trigger.setAttribute('aria-haspopup', 'listbox');
+    const label = document.createElement('span');
+    const caret = document.createElement('span');
+    caret.textContent = '⌄';
+    trigger.append(label, caret);
+    const menu = document.createElement('div');
+    menu.className = 'dropdown-menu';
+    menu.setAttribute('role', 'listbox');
+    const sync = () => {
+        const selected = select.options[select.selectedIndex];
+        label.textContent = selected?.textContent || 'Select';
+        menu.querySelectorAll('button').forEach(button => {
+            const active = button.dataset.value === select.value;
+            button.classList.toggle('selected', active);
+            button.setAttribute('aria-selected', String(active));
+        });
+    };
+    Array.from(select.options).forEach(option => {
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.setAttribute('role', 'option');
+        item.dataset.value = option.value;
+        item.textContent = option.textContent;
+        item.addEventListener('click', () => {
+            select.value = option.value;
+            select.dispatchEvent(new Event('change', {bubbles:true}));
+            sync();
+            wrap.classList.remove('open');
+        });
+        menu.appendChild(item);
+    });
+    trigger.addEventListener('click', () => wrap.classList.toggle('open'));
+    document.addEventListener('click', event => { if (!wrap.contains(event.target)) wrap.classList.remove('open'); });
+    select.insertAdjacentElement('afterend', wrap);
+    wrap.append(trigger, menu);
+    select.classList.add('visually-hidden-native-select');
+    sync();
+}
+
 function bindHomeSearch() {
     const form = $('#home-search');
     if (!form) return;
@@ -752,6 +814,7 @@ function bindHomeSearch() {
             categories.map(c => `<option value="${safe(c.name)}">${safe(c.name)}</option>`).join('');
         form.insertBefore(categorySelect, form.querySelector('button[type="submit"]'));
     }
+    enhanceCustomSelect(categorySelect);
     let timer;
     const search = async () => {
         const q = input.value.trim();
@@ -869,6 +932,7 @@ async function initProducts() {
         <div id="products-content" class="products-results"></div>
     `);
 
+    $('#product-filter').querySelectorAll('select').forEach(enhanceCustomSelect);
     $('#product-filter').addEventListener('submit', async event => {
         event.preventDefault();
 
@@ -989,12 +1053,37 @@ async function initCustomer() {
                         : '<p>No new notifications.</p>'}
                 </section>
 
+                <section class="panel account-danger-zone">
+                    <h2>Delete account permanently</h2>
+                    <p>This permanently deletes your account, pickup requests, favourites, likes, notifications, suggestions and shop reviews linked to your account. This cannot be undone.</p>
+                    <button class="btn btn-danger" id="delete-account" type="button">Delete my account</button>
+                </section>
+
                 <button class="btn btn-dark" id="signout">
                     Sign out
                 </button>
             `);
 
             $('#signout').onclick = signOut;
+            $('#delete-account').onclick = async () => {
+                const password = await askPasswordForDeletion();
+                if (password === null) return;
+                const sure = await askConfirmation(
+                    'Delete your account permanently?',
+                    'Are you absolutely sure? All account-linked records will be permanently deleted. This action cannot be undone.',
+                    'Yes, delete permanently'
+                );
+                if (!sure) return;
+                try {
+                    await api('/customer/account', { method: 'DELETE', body: { password } });
+                    localStorage.removeItem(TOKEN_KEY);
+                    currentUser = null;
+                    toast('Your account has been permanently deleted.');
+                    location.href = link('customer/login.html');
+                } catch (error) {
+                    toast(error.message, 'error');
+                }
+            };
 
             $$('[data-cancel-reservation]').forEach(button => {
                 button.onclick = async () => {
@@ -1033,6 +1122,37 @@ async function initCustomer() {
         }
     }
                    }
+function askPasswordForDeletion() {
+    return new Promise(resolve => {
+        let modal = $('#delete-account-password-modal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'delete-account-password-modal';
+            modal.className = 'ors-dialog-backdrop';
+            modal.innerHTML = `<form class="ors-dialog" novalidate>
+                <span class="dialog-icon">${icon('lock')}</span>
+                <h2>Confirm your password</h2>
+                <p>Enter your current password before continuing.</p>
+                <label class="field">Current password<input name="password" type="password" autocomplete="current-password" required></label>
+                <p class="dialog-error" aria-live="polite"></p>
+                <div class="dialog-actions"><button type="button" class="btn btn-light" data-cancel>Cancel</button><button type="submit" class="btn btn-primary">Continue</button></div>
+            </form>`;
+            document.body.appendChild(modal);
+        }
+        const form = modal.querySelector('form');
+        const input = form.elements.password;
+        const error = modal.querySelector('.dialog-error');
+        let settled = false;
+        const finish = value => { if (settled) return; settled = true; modal.classList.remove('is-open'); form.removeEventListener('submit', submit); modal.querySelector('[data-cancel]').removeEventListener('click', cancel); modal.removeEventListener('click', backdrop); resolve(value); };
+        const cancel = e => { e.preventDefault(); finish(null); };
+        const backdrop = e => { if (e.target === modal) finish(null); };
+        const submit = e => { e.preventDefault(); if (!input.value) { error.textContent='Enter your current password.'; return; } finish(input.value); };
+        input.value=''; error.textContent='';
+        form.addEventListener('submit',submit); modal.querySelector('[data-cancel]').addEventListener('click',cancel); modal.addEventListener('click',backdrop); modal.classList.add('is-open');
+        requestAnimationFrame(()=>input.focus());
+    });
+}
+
 function signOut() {
     localStorage.removeItem(TOKEN_KEY);
     currentUser = null;
