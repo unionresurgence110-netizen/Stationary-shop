@@ -148,12 +148,14 @@ router.post('/auth/login',wrap(async(req,res)=>{
 
 router.post('/products/:id/like',auth,wrap(async(req,res)=>{
  await query('INSERT INTO product_likes(user_id,product_id) VALUES($1,$2) ON CONFLICT DO NOTHING',[req.user.id,req.params.id]);
- res.json({liked:true});
+ const count=await query('SELECT COUNT(*)::int AS likes_count FROM product_likes WHERE product_id=$1',[req.params.id]);
+ res.json({liked:true,likes_count:count.rows[0].likes_count});
 }));
 
 router.delete('/products/:id/like',auth,wrap(async(req,res)=>{
  await query('DELETE FROM product_likes WHERE user_id=$1 AND product_id=$2',[req.user.id,req.params.id]);
- res.json({liked:false});
+ const count=await query('SELECT COUNT(*)::int AS likes_count FROM product_likes WHERE product_id=$1',[req.params.id]);
+ res.json({liked:false,likes_count:count.rows[0].likes_count});
 }));
 
 router.post('/products/:id/favourite',auth,wrap(async(req,res)=>{
