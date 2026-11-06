@@ -520,7 +520,10 @@ function askReservationQuantity() {
         const form = modal.querySelector('form');
         const input = form.elements.quantity;
         const error = modal.querySelector('.dialog-error');
+        let completed = false;
         const finish = value => {
+            if (completed) return;
+            completed = true;
             modal.classList.remove('is-open');
             form.onsubmit = null;
             modal.querySelector('[data-cancel]').onclick = null;
@@ -538,7 +541,7 @@ function askReservationQuantity() {
             }
             finish(value);
         };
-        modal.querySelector('[data-cancel]').onclick = () => finish(null);
+        modal.querySelector('[data-cancel]').onclick = event => { event.preventDefault(); event.stopImmediatePropagation(); finish(null); };
         modal.onclick = event => { if (event.target === modal) finish(null); };
         modal.classList.add('is-open');
         input.focus();
@@ -733,17 +736,59 @@ async function initHome() {
 function bindHomeSearch() {
     const form = $('#home-search');
     if (!form) return;
+    const input = form.querySelector('input[name="q"]');
+    const results = $('#home-search-results');
+    if (!input || !results) return;
 
-    form.addEventListener('submit', event => {
-        event.preventDefault();
-
-        const q = new FormData(form).get('q') || '';
-
-        location.href =
-            `pages/products.html?q=${encodeURIComponent(q)}`;
+    // Keep the home search on the home page and let customers filter by category.
+    let categorySelect = form.querySelector('[name="category"]');
+    if (!categorySelect) {
+        categorySelect = document.createElement('select');
+        categorySelect.name = 'category';
+        categorySelect.setAttribute('aria-label', 'Search category');
+        categorySelect.type = 'button';
+        categorySelect.className = 'home-search-category';
+        categorySelect.innerHTML = '<option value="">All categories</option>' +
+            categories.map(c => `<option value="${safe(c.name)}">${safe(c.name)}</option>`).join('');
+        form.insertBefore(categorySelect, form.querySelector('button[type="submit"]'));
+    }
+    let timer;
+    const search = async () => {
+        const q = input.value.trim();
+        const category = categorySelect.value;
+        if (!q && !category) { results.classList.add('hidden'); results.innerHTML = ''; return; }
+        results.classList.remove('hidden');
+        results.innerHTML = '<div class="search-result-status">Searching products…</div>';
+        try {
+            const items = await getProducts({q, category});
+            products = items;
+            if (items.length) {
+                results.innerHTML = `<div class="home-search-result-grid">${items.slice(0, 6).map(productCard).join('')}</div>` +
+                    (items.length > 6 ? `<a class="search-view-all" href="pages/products.html?q=${encodeURIComponent(q)}&category=${encodeURIComponent(category)}">View all ${items.length} results</a>` : '');
+                bindProductActions(results);
+                icons();
+            } else {
+                results.innerHTML = `<div class="search-empty-state"><strong>No products found</strong><p>We couldn't find “${safe(q || category)}”. You can suggest this product to the shop.</p><button class="btn btn-primary" type="button" data-suggest-missing>Suggest this product</button></div>`;
+                results.querySelector('[data-suggest-missing]').addEventListener('click', async () => {
+                    if (!signedIn()) { location.href = `customer/login.html?next=${encodeURIComponent('../pages/suggestions.html')}`; return; }
+                    try {
+                        await api('/customer/suggestions', {method:'POST', body:{title:q || category, details:'Suggested from the home page search.'}});
+                        toast('Suggestion sent to the shop. Thank you!');
+                        results.classList.add('hidden');
+                    } catch (error) { toast(error.message, 'error'); }
+                });
+            }
+        } catch (error) {
+            results.innerHTML = `<div class="search-result-status">${safe(error.message || 'Search is temporarily unavailable.')}</div>`;
+        }
+    };
+    input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(search, 250); });
+    categorySelect.addEventListener('change', search);
+    form.addEventListener('submit', event => { event.preventDefault(); search(); });
+    document.addEventListener('click', event => {
+        if (!form.contains(event.target)) results.classList.add('hidden');
     });
 }
-
 async function initProducts() {
     const params = new URLSearchParams(location.search);
 
@@ -765,11 +810,19 @@ async function initProducts() {
 
         content.innerHTML = items.length
             ? `<div class="product-grid">${items.map(productCard).join('')}</div>`
-            : emptyState(
-                'No products found',
-                'Try another search or category.'
-            );
+            : `<div class="empty search-empty-state">
+                <strong>No products found</strong>
+                <p>Try another search or category, or suggest this product to the shop.</p>
+                <button class="btn btn-primary" type="button" data-suggest-no-results>Suggest this product</button>
+              </div>`;
 
+        content.querySelector('[data-suggest-no-results]')?.addEventListener('click', async () => {
+            if (!signedIn()) { location.href = link('customer/login.html'); return; }
+            try {
+                await api('/customer/suggestions', {method:'POST', body:{title:q || category || 'New product suggestion', details:'Suggested from the Our Products search.'}});
+                toast('Suggestion sent to the shop. Thank you!');
+            } catch (error) { toast(error.message, 'error'); }
+        });
         bindProductActions(content);
         icons();
     }
@@ -1265,6 +1318,7 @@ async function initStatic() {
                         ${icon('map-pin')}
                         <b>Address</b>
                         <p>${safe(cfg.address || 'Not added yet.')}</p>
+                        ${cfg.latitude && cfg.longitude ? `<a class="btn btn-primary map-directions" target="_blank" rel="noopener" href="https://www.google.com/maps?q=${encodeURIComponent(cfg.latitude + ',' + cfg.longitude)}">${icon('map-pin')} Get directions</a>` : ''}
                     </div>
 
                     <div>
@@ -1741,7 +1795,7 @@ async function initOwner() {
 async function initOwnerSettings() {
     const keys = [
         'name', 'suffix', 'motto', 'description',
-        'phone', 'email', 'address', 'bannerImage',
+        'phone', 'email', 'address', 'latitude', 'longitude', 'bannerImage',
         'aboutImage', 'socials'
     ];
 
@@ -1782,6 +1836,15 @@ async function initOwnerSettings() {
                 Address
                 <input name="address" value="${safe(cfg.address)}">
             </label>
+            <label class="field">
+                Map latitude
+                <input name="latitude" type="number" step="any" value="${safe(cfg.latitude || '')}" placeholder="e.g. 26.54">
+            </label>
+            <label class="field">
+                Map longitude
+                <input name="longitude" type="number" step="any" value="${safe(cfg.longitude || '')}" placeholder="e.g. 86.75">
+            </label>
+            <p class="field full muted">Set the shop's map coordinates. Customers will get a Google Maps direction link on the shop information page.</p>
 
             <label class="field full">
                 Banner image URL
