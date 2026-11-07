@@ -367,3 +367,43 @@ html,body{max-width:100%;overflow-x:hidden}
 #ors-toast[data-type="success"] {
     background: #147a55;
 }
+
+/* Owner dashboard additions — scoped to owner management controls. */
+.owner-form-panel h2{margin:0 0 16px;font:800 18px Manrope,sans-serif}
+.owner-settings-section{margin:10px 0 0;padding-top:12px;border-top:1px solid var(--line);font:800 15px Manrope,sans-serif}
+.owner-item-card{padding:18px}
+.owner-item-heading{display:flex;align-items:center;gap:14px;min-width:0}
+.owner-item-heading h3{margin:0 0 5px;font:800 16px Manrope,sans-serif}
+.owner-item-heading p{margin:3px 0;font-size:12px}
+.owner-item-thumb{width:76px;height:76px;flex:none;object-fit:cover;border-radius:13px;background:var(--soft);border:1px solid var(--line)}
+.owner-item-placeholder{display:grid;place-items:center;color:var(--muted)}
+.owner-item-placeholder svg{width:27px}
+.owner-item-actions{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-top:8px}
+.owner-edit-form{margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
+.owner-image-field{padding:13px;border:1px dashed var(--line);border-radius:13px;background:var(--bg)}
+.owner-image-field>span{font-size:12px;font-weight:800}
+.owner-image-field small{font-weight:500;color:var(--muted)}
+.owner-image-field input[type=file]{max-width:100%;font-size:12px}
+.owner-upload-preview{display:block;width:min(100%,360px);max-height:190px;object-fit:contain;object-position:left center;border-radius:11px;background:var(--surface);border:1px solid var(--line)}
+.owner-clear-preview{align-self:flex-start}
+.owner-check-field{display:flex;flex-direction:row;align-items:center;gap:9px}
+.owner-check-field input{width:auto}
+.owner-map-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.owner-location-map{height:340px;width:100%;border-radius:14px;border:1px solid var(--line);overflow:hidden;background:var(--soft);z-index:0}
+.about-map-wrap{margin-top:24px}
+.about-map-wrap h3,.about-social-links h3{font:800 16px Manrope,sans-serif}
+.about-map-wrap iframe{width:100%;height:300px;border:1px solid var(--line);border-radius:14px}
+.about-social-links{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:22px}
+.about-social-links h3{width:100%;margin-bottom:4px}
+.about-social-links a{display:inline-flex;align-items:center;gap:8px;padding:9px 12px;border-radius:11px;background:var(--soft);color:var(--primary);font-size:12px;font-weight:800;text-transform:capitalize}
+.about-social-links svg{width:19px;height:19px}
+.footer .premium-socials a svg{width:17px;height:17px}
+@media(max-width:620px){.owner-location-map{height:270px}.owner-item-heading{align-items:flex-start}.owner-item-thumb{width:62px;height:62px}.owner-item-actions .btn{flex:1}.owner-map-actions{align-items:flex-start}}
+.owner-dashboard .stats-grid,.stats-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px;margin-bottom:20px}
+.stats-grid .stat-card{margin:0;padding:19px;border-radius:16px}
+.stats-grid .stat-card span{display:block;color:var(--muted);font-size:11px;text-transform:capitalize;font-weight:800}
+.stats-grid .stat-card h2{margin:8px 0 0;font:800 27px Manrope,sans-serif;color:var(--primary2)}
+.dash-links{justify-content:flex-start;gap:10px;margin:18px 0 0}
+.dash-links a{border:1px solid var(--line);transition:.18s}
+.dash-links a:hover{border-color:var(--primary2);transform:translateY(-2px)}
+@media(max-width:700px){.stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.stats-grid .stat-card{padding:15px}}
