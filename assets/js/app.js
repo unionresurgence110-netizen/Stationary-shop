@@ -61,6 +61,28 @@ let favourites = [];
 let notices = [];
 
 const getToken = () => localStorage.getItem(TOKEN_KEY);
+
+function getTokenUser() {
+    const token = getToken();
+    if (!token) return null;
+
+    try {
+        const payload = JSON.parse(
+            atob(
+                token.split('.')[1]
+                    .replace(/-/g, '+')
+                    .replace(/_/g, '/')
+            )
+        );
+
+        if (payload.exp && Date.now() / 1000 >= payload.exp) return null;
+
+        return payload;
+    } catch {
+        return null;
+    }
+}
+
 const signedIn = () => Boolean(getToken());
 const isOwner = () => currentUser?.role === 'admin';
 
