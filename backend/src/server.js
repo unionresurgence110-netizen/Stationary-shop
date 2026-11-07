@@ -20,8 +20,19 @@ const origins = (process.env.CORS_ORIGIN || 'http://localhost:3000')
 // Security headers.
 app.use(
   helmet({
-    crossOriginResourcePolicy: {
-      policy: 'cross-origin'
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", 'https://unpkg.com'],
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://unpkg.com'],
+        imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+        fontSrc: ["'self'", 'data:', 'https://unpkg.com'],
+        connectSrc: ["'self'", 'https:'],
+        frameSrc: ["'self'", 'https://www.openstreetmap.org'],
+        objectSrc: ["'none'"],
+        upgradeInsecureRequests: []
+      }
     }
   })
 );
