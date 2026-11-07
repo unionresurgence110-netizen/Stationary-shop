@@ -210,13 +210,15 @@ function header() {
                 <a class="nav-icon gift" href="${link('pages/offers.html')}"
                    aria-label="Offers">${icon('gift')}</a>
 
-                <a class="nav-icon" href="${link(
-                    signedIn()
-                    ? 'customer/profile.html'
-                    : 'customer/login.html'
-                )}" aria-label="Account">
-                    ${icon(signedIn() ? 'user-round' : 'log-in')}
-                </a>
+                 <a class="nav-icon" href="${link(
+    isOwner()
+        ? 'owner/dashboard.html'
+        : signedIn()
+            ? 'customer/profile.html'
+            : 'customer/login.html'
+)}" aria-label="Account">
+    ${icon(signedIn() ? 'user-round' : 'log-in')}
+</a>
 
                 <button class="nav-icon" type="button" data-theme
                         aria-label="Toggle theme">
