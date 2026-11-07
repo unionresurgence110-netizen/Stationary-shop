@@ -157,15 +157,26 @@ async function loadSettings() {
 }
 
 async function loadCurrentUser() {
-    if (!getToken()) return null;
+    if (!getToken()) {
+        currentUser = null;
+        return null;
+    }
 
     try {
         const data = await api('/auth/me');
         currentUser = data.user || null;
         return currentUser;
-    } catch {
-        currentUser = null;
-        return null;
+    } catch (error) {
+        const tokenUser = getTokenUser();
+
+        currentUser = tokenUser
+            ? {
+                id: tokenUser.id,
+                role: tokenUser.role
+            }
+            : null;
+
+        return currentUser;
     }
 }
 
