@@ -779,7 +779,8 @@ router.post('/owner/upload',...owner,storage.single('image'),wrap(async(req,res)
   return res.status(400).json({error:'Choose an image (JPG, PNG, WEBP or GIF), max 5 MB.'});
  }
 
- const key=`products/${Date.now()}-${require('crypto').randomUUID()}`;
+ const folder=['settings','products','categories'].includes(String(req.body.folder||''))?String(req.body.folder):'settings';
+ const key=`${folder}/${Date.now()}-${require('crypto').randomUUID()}`;
  const url=await upload(key,req.file.buffer,req.file.mimetype);
 
  res.status(201).json({key,url});
