@@ -21,8 +21,10 @@ Full-stack customer shop + owner dashboard. This project follows `Om_Ridhi_Sidhi
 - Customer cancellation of pending requests; owner can cancel approved reservations; expiry returns stock.
 - Suggestions, likes and owner replies/visibility controls.
 - Shop Reviews only. Product reviews and their endpoints/tables are removed.
-- Owner product/category/offer/reservation/suggestion/shop settings controls.
-- Image upload/replacement/deletion endpoint using private R2 credentials on server.
+- Owner product/category controls with image upload/preview/replacement/removal, category assignment and product tags.
+- Owner settings for homepage banner and separate About image uploads, editable About description, social links and draggable OpenStreetMap location pin.
+- About page OpenStreetMap embed and recognizable social links; existing customer storefront layout remains unchanged outside these About/footer integrations.
+- Image upload/replacement/deletion endpoints using private R2 credentials on server.
 - Light/dark theme toggle.
 - No online checkout, delivery or online payment.
 
@@ -59,7 +61,7 @@ The homepage and customer/owner pages are served by Express. Do not open individ
 2. Create a Neon PostgreSQL project and copy its pooled or direct connection string. Run `backend/schema.sql`, then migrations 002 and 003 in order.
 3. Create a Render **Web Service** from the repository. Runtime: Node. Build command: `npm install`. Start command: `npm start`. Node 20+.
 4. Add environment variables in Render. Set `NODE_ENV=production`, `DATABASE_URL`, a unique `JWT_SECRET`, `JWT_EXPIRES_IN=7d`, `CORS_ORIGIN` to the exact deployed origin, and R2 credentials.
-5. Create a Cloudflare R2 bucket. Generate an access key scoped to that bucket. Set a public custom domain for image delivery and use it as `R2_PUBLIC_BASE_URL`. Keep access/secret keys private; never put them in frontend files.
+5. Create a Cloudflare R2 bucket. Generate an access key scoped to that bucket. Set a public custom domain for image delivery and use it as `R2_PUBLIC_BASE_URL`. Keep access/secret keys private; never put them in frontend files. Product, category, homepage banner and About image uploads all require these five R2 variables to be configured on the Render service.
 6. After deployment, register the owner and promote that email in Neon as described above.
 7. Test `/api/health`, registration, login, product creation, image upload, offer display, like/favourite independence, reservation approval, cancellation, expiry, suggestions and reviews.
 8. Add your custom domain to Render/Cloudflare only after the Render URL works. Update `CORS_ORIGIN` if the browser frontend is hosted on a separate origin.
@@ -82,7 +84,7 @@ The homepage and customer/owner pages are served by Express. Do not open individ
 - Customer collects and pays at the physical shop. There is no online payment, delivery or shipping.
 
 ## Security / production checklist
-- Use HTTPS, a unique high-entropy JWT secret and private R2 credentials.
+- Use HTTPS, a unique high-entropy JWT secret and private R2 credentials. The owner location picker requests browser geolocation only after the owner taps its button; HTTPS (or localhost during development) is required, and the pin can also be moved manually.
 - Restrict CORS to the deployed frontend origin.
 - Promote only the actual owner account in SQL; registration always creates customer role.
 - Back up Neon and R2. Set usage alerts and test restoration.

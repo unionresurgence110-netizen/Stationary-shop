@@ -1,0 +1,14 @@
+OM RIDHI SIDHI — Owner Dashboard update patch
+
+Replace the matching files in your existing project with the files in this ZIP, keeping the same folder paths. This is a patch ZIP, not a full website ZIP.
+
+Changed files:
+- assets/js/app.js
+- assets/css/style.css
+- backend/src/routes/api.js
+- backend/src/server.js
+- README.md
+
+No customer HTML pages, customer account pages, homepage HTML, existing images, or database schema/migrations are included or overwritten.
+
+Image uploads require all five Cloudflare R2 environment variables to be configured on the live backend. Never share secret keys in chat.
