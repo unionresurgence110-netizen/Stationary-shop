@@ -30,6 +30,17 @@ const link = p => root + p;
 
 const icon = name => `<i data-lucide="${name}"></i>`;
 
+function socialBrandIcon(name) {
+    const paths = {
+        instagram: '<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="18" cy="6" r=".8" fill="currentColor"/>',
+        facebook: '<path d="M14 8h3V4h-3c-3 0-5 2-5 5v3H6v4h3v5h4v-5h3l1-4h-4V9c0-.7.3-1 1-1z" fill="currentColor" stroke="none"/>',
+        whatsapp: '<path d="M20 11.5a8 8 0 0 1-11.8 7L4 20l1.5-4A8 8 0 1 1 20 11.5Z"/><path d="M9 8.5c.5 3 2.5 5 5.5 5.5l1-1.4-2-1-1 1c-1-.4-1.7-1.1-2.1-2.1l1-1-1-2Z" fill="currentColor" stroke="none"/>',
+        tiktok: '<path d="M14 4v10.5a4 4 0 1 1-4-4M14 4c.5 3 2.2 4.7 5 5"/>'
+    };
+    const key = String(name||'').toLowerCase();
+    return `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths[key]||'<circle cx="12" cy="12" r="8"/>'}</svg>`;
+}
+
 const safe = value =>
     String(value ?? '').replace(/[&<>"']/g, c => ({
         '&': '&amp;',
@@ -222,8 +233,8 @@ function footer(){
  const socialItems=[
   ['instagram',socials.instagram,'Instagram'],
   ['facebook',socials.facebook,'Facebook'],
-  ['message-circle',socials.whatsapp,'WhatsApp'],
-  ['music-2',socials.tiktok,'TikTok']
+  ['whatsapp',socials.whatsapp,'WhatsApp'],
+  ['tiktok',socials.tiktok,'TikTok']
  ].filter(x=>x[1]);
  return `<footer class="footer premium-footer">
   <div class="footer-main premium-footer-main">
@@ -232,7 +243,7 @@ function footer(){
     <h2>Little things.<br><span>Big smiles.</span></h2>
     <p>${safe(cfg.description)}</p>
     <a class="footer-explore-btn" href="${link('pages/products.html')}">Explore our collection ${icon('arrow-up-right')}</a>
-    ${socialItems.length?`<div class="socials premium-socials">${socialItems.map(([ic,url,label])=>`<a href="${safe(url)}" target="_blank" rel="noopener noreferrer" aria-label="${label}">${icon(ic)}</a>`).join('')}</div>`:''}
+    ${socialItems.length?`<div class="socials premium-socials">${socialItems.map(([ic,url,label])=>`<a href="${safe(url)}" target="_blank" rel="noopener noreferrer" aria-label="${label}">${socialBrandIcon(ic)}</a>`).join('')}</div>`:''}
    </div>
    <div class="footer-column"><h3>Explore</h3><span class="footer-heading-line"></span>
     <a href="${link('index.html')}">Home</a><a href="${link('pages/products.html')}">Shop Products</a><a href="${link('pages/offers.html')}">Latest Offers</a><a href="${link('pages/suggestions.html')}">Suggestions</a><a href="${link('pages/reviews.html')}">Shop Reviews</a>
@@ -1562,7 +1573,7 @@ async function initStatic() {
                         ${icon('map-pin')}
                         <b>Address</b>
                         <p>${safe(cfg.address || 'Not added yet.')}</p>
-                        ${cfg.latitude && cfg.longitude ? `<a class="btn btn-primary map-directions" target="_blank" rel="noopener" href="https://www.google.com/maps?q=${encodeURIComponent(cfg.latitude + ',' + cfg.longitude)}">${icon('map-pin')} Get directions</a>` : ''}
+                        ${cfg.latitude && cfg.longitude ? `<a class="btn btn-primary map-directions" target="_blank" rel="noopener" href="https://www.openstreetmap.org/?mlat=${encodeURIComponent(cfg.latitude)}&mlon=${encodeURIComponent(cfg.longitude)}#map=17/${encodeURIComponent(cfg.latitude)}/${encodeURIComponent(cfg.longitude)}">${icon('map-pin')} View on OpenStreetMap</a>` : ''}
                     </div>
 
                     <div>
@@ -1577,6 +1588,8 @@ async function initStatic() {
                         <p>${safe(cfg.email || 'Not added yet.')}</p>
                     </div>
                 </div>
+                ${cfg.latitude && cfg.longitude ? `<div class="about-map-wrap"><h3>Find our shop</h3><iframe title="Shop location on OpenStreetMap" loading="lazy" src="https://www.openstreetmap.org/export/embed.html?bbox=${encodeURIComponent(Number(cfg.longitude)-0.01)}%2C${encodeURIComponent(Number(cfg.latitude)-0.01)}%2C${encodeURIComponent(Number(cfg.longitude)+0.01)}%2C${encodeURIComponent(Number(cfg.latitude)+0.01)}&layer=mapnik&marker=${encodeURIComponent(cfg.latitude)}%2C${encodeURIComponent(cfg.longitude)}"></iframe></div>` : ''}
+                ${Object.entries(cfg.socials||{}).filter(([,url])=>url).length ? `<div class="about-social-links"><h3>Connect with us</h3>${Object.entries(cfg.socials||{}).filter(([,url])=>url).map(([key,url])=>`<a href="${safe(url)}" target="_blank" rel="noopener noreferrer" aria-label="${safe(key)}">${socialBrandIcon(key)}<span>${safe(key)}</span></a>`).join('')}</div>` : ''}
             </section>
         `);
     }
@@ -1681,165 +1694,148 @@ async function initOwner() {
     }
 
     if (path.endsWith('/products.html')) {
-        const data = await api('/owner/products');
+        const [data, categoryData] = await Promise.all([
+            api('/owner/products'), api('/owner/categories')
+        ]);
         const items = data.products || [];
+        const categoryItems = categoryData.categories || [];
+        const categoryOptions = categoryItems.map(c =>
+            `<option value="${safe(c.id)}">${safe(c.name)}</option>`
+        ).join('');
+        const tagText = value => Array.isArray(value) ? value.join(', ') : '';
+        const imageField = (prefix, imageUrl='') => `
+            <div class="field full owner-image-field">
+                <span>Product image <small>(JPG, PNG, WEBP or GIF · max 5 MB)</small></span>
+                <input type="file" name="${prefix}Image" accept="image/jpeg,image/png,image/webp,image/gif">
+                <img class="owner-upload-preview ${imageUrl ? '' : 'hidden'}" data-preview="${prefix}" src="${safe(imageUrl)}" alt="Product preview">
+                <button type="button" class="btn btn-light owner-clear-preview" data-clear-preview="${prefix}">Clear selected image</button>
+            </div>`;
+        const productCard = p => `
+            <article class="panel owner-item-card">
+                <div class="owner-item-heading">
+                    ${p.image_url ? `<img class="owner-item-thumb" src="${safe(p.image_url)}" alt="">` : `<div class="owner-item-thumb owner-item-placeholder">${icon('image')}</div>`}
+                    <div><h3>${safe(p.name)}</h3><p>${money(p.price)} · Stock: ${safe(p.stock_quantity)}</p>
+                    <p class="muted">${safe(categoryItems.find(c=>c.id===p.category_id)?.name || 'Uncategorised')} · Tags: ${safe(tagText(p.manual_tags) || 'None')}</p></div>
+                </div>
+                <div class="owner-item-actions"><button class="btn btn-light" type="button" data-edit-product="${safe(p.id)}">Edit product</button>
+                <button class="btn btn-dark" type="button" data-hide-product="${safe(p.id)}">Hide product</button></div>
+                <form class="form-grid owner-edit-form hidden" data-product-edit="${safe(p.id)}">
+                    <label class="field">Product name<input name="name" value="${safe(p.name)}" required></label>
+                    <label class="field">Price<input name="price" type="number" min="0" step="0.01" value="${safe(p.price)}" required></label>
+                    <label class="field">Category<select name="categoryId"><option value="">No category</option>${categoryItems.map(c=>`<option value="${safe(c.id)}" ${c.id===p.category_id?'selected':''}>${safe(c.name)}</option>`).join('')}</select></label>
+                    <label class="field">Stock quantity<input name="stockQuantity" type="number" min="0" step="1" value="${safe(p.stock_quantity)}"></label>
+                    <label class="field full">Description<textarea name="description">${safe(p.description)}</textarea></label>
+                    <label class="field full">Tags <small>Separate tags with commas</small><input name="tags" value="${safe(tagText(p.manual_tags))}" placeholder="e.g. new, popular, school"></label>
+                    ${imageField('edit-'+p.id,p.image_url || '')}
+                    <label class="field owner-check-field"><input type="checkbox" name="removeImage"> Remove current image</label>
+                    <div class="field full owner-item-actions"><button class="btn btn-primary" type="submit">Save changes</button><button class="btn btn-light" type="button" data-cancel-edit="${safe(p.id)}">Cancel</button></div>
+                </form>
+            </article>`;
 
-        return shell('Manage Products', 'Products in your shop.', `
-            <section class="panel">
+        return shell('Manage Products', 'Add products, images, categories and searchable tags.', `
+            <section class="panel owner-form-panel">
                 <h2>Add product</h2>
-
                 <form id="owner-product-form" class="form-grid">
-                    <label class="field">
-                        Product name
-                        <input name="name" required>
-                    </label>
-
-                    <label class="field">
-                        Price
-                        <input name="price" type="number" min="0" step="0.01" required>
-                    </label>
-
-                    <label class="field">
-                        Category ID
-                        <input name="categoryId">
-                    </label>
-
-                    <label class="field">
-                        Stock quantity
-                        <input name="stockQuantity" type="number" min="0" value="0">
-                    </label>
-
-                    <label class="field full">                        Description
-                        <textarea name="description"></textarea>
-                    </label>
-
-                    <button class="btn btn-primary">Add product</button>
+                    <label class="field">Product name<input name="name" required maxlength="180"></label>
+                    <label class="field">Price<input name="price" type="number" min="0" step="0.01" required></label>
+                    <label class="field">Category<select name="categoryId"><option value="">Choose category (optional)</option>${categoryOptions}</select></label>
+                    <label class="field">Stock quantity<input name="stockQuantity" type="number" min="0" step="1" value="0"></label>
+                    <label class="field full">Description<textarea name="description"></textarea></label>
+                    <label class="field full">Tags <small>Separate tags with commas</small><input name="tags" placeholder="e.g. new, popular, school"></label>
+                    ${imageField('new')}
+                    <div class="field full owner-item-actions"><button class="btn btn-primary" type="submit">Add product</button><button class="btn btn-light" type="reset">Cancel / Clear</button></div>
                 </form>
             </section>
-
-            ${items.map(p => `
-                <article class="panel">
-                    <h3>${safe(p.name)}</h3>
-                    <p>${money(p.price)}</p>
-                    <p>Stock: ${safe(p.stock_quantity)}</p>
-                    <button class="btn btn-dark"
-                            data-hide-product="${safe(p.id)}">
-                        Hide product
-                    </button>
-                </article>
-            `).join('')}
+            ${items.map(productCard).join('') || '<div class="empty">No products found yet.</div>'}
         `).then(() => {
-            $('#owner-product-form').onsubmit = async e => {
-                e.preventDefault();
-
-                const fd = new FormData(e.currentTarget);
-
-                try {
-                    await api('/owner/products', {
-                        method: 'POST',
-                        body: {
-                            name: fd.get('name'),
-                            price: Number(fd.get('price')),
-                            categoryId: fd.get('categoryId') || null,
-                            stockQuantity: Number(fd.get('stockQuantity')),
-                            description: fd.get('description')
-                        }
-                    });
-
-                    toast('Product added.');
-                    location.reload();
-                } catch (error) {
-                    toast(error.message, 'error');
-                }
-            };
-
-            $$('[data-hide-product]').forEach(button => {
-                button.onclick = async () => {
-                    if (!await askConfirmation('Hide product?', 'This product will no longer appear in the shop.', 'Hide product')) return;
-
-                    try {
-                        await api(`/owner/products/${button.dataset.hideProduct}`, {
-                            method: 'DELETE'
-                        });
-
-                        toast('Product hidden.');
-                        location.reload();
-                    } catch (error) {
-                        toast(error.message, 'error');
+            const wirePreview = (form, prefix) => {
+                const input = form.querySelector(`[name="${prefix}Image"]`);
+                const preview = form.querySelector(`[data-preview="${prefix}"]`);
+                if (!input || !preview) return;
+                input.onchange = () => {
+                    const file = input.files?.[0];
+                    if (!file) return;
+                    if (!/^image\/(jpeg|png|webp|gif)$/.test(file.type) || file.size > 5*1024*1024) {
+                        toast('Choose JPG, PNG, WEBP or GIF up to 5 MB.', 'error'); input.value=''; return;
                     }
+                    preview.src = URL.createObjectURL(file); preview.classList.remove('hidden');
                 };
+                form.querySelector(`[data-clear-preview="${prefix}"]`)?.addEventListener('click', () => { input.value=''; preview.removeAttribute('src'); preview.classList.add('hidden'); });
+            };
+            const uploadProductImage = async (id, file) => {
+                if (!file) return;
+                const fd = new FormData(); fd.append('image', file);
+                await api(`/owner/products/${id}/image`, {method:'POST', body:fd});
+            };
+            const form = $('#owner-product-form'); wirePreview(form, 'new');
+            form.onreset = () => setTimeout(() => { const img=form.querySelector('[data-preview="new"]'); if(img){img.removeAttribute('src');img.classList.add('hidden');}},0);
+            form.onsubmit = async e => {
+                e.preventDefault(); const fd = new FormData(form); const submit=form.querySelector('[type="submit"]'); submit.disabled=true;
+                let createdProduct=null;
+                try {
+                    createdProduct = await api('/owner/products', {method:'POST', body:{name:fd.get('name'),price:Number(fd.get('price')),categoryId:fd.get('categoryId')||null,stockQuantity:Number(fd.get('stockQuantity')||0),description:fd.get('description'),tags:String(fd.get('tags')||'').split(',').map(x=>x.trim()).filter(Boolean)}});
+                    const file=fd.get('newImage');
+                    if(file instanceof File && file.size) await uploadProductImage(createdProduct.product.id,file);
+                    toast('Product added successfully.'); location.reload();
+                } catch(error) { if(createdProduct){toast('Product was saved, but its image upload failed: '+error.message,'error');setTimeout(()=>location.reload(),1600);}else{toast(error.message, 'error'); submit.disabled=false;} }
+            };
+            $$('[data-edit-product]').forEach(button=>button.onclick=()=>document.querySelector(`[data-product-edit="${button.dataset.editProduct}"]`)?.classList.toggle('hidden'));
+            $$('[data-cancel-edit]').forEach(button=>button.onclick=()=>document.querySelector(`[data-product-edit="${button.dataset.cancelEdit}"]`)?.classList.add('hidden'));
+            $$('[data-product-edit]').forEach(editForm=>{
+                const id=editForm.dataset.productEdit; wirePreview(editForm, 'edit-'+id);
+                editForm.onsubmit=async e=>{
+                    e.preventDefault(); const fd=new FormData(editForm); const submit=editForm.querySelector('[type="submit"]'); submit.disabled=true;
+                    try {
+                        await api(`/owner/products/${id}`,{method:'PATCH',body:{name:fd.get('name'),price:Number(fd.get('price')),categoryId:fd.get('categoryId')||null,stockQuantity:Number(fd.get('stockQuantity')||0),description:fd.get('description'),tags:String(fd.get('tags')||'').split(',').map(x=>x.trim()).filter(Boolean)}});
+                        const file=fd.get(`edit-${id}Image`); if(file instanceof File && file.size) await uploadProductImage(id,file);
+                        if(fd.get('removeImage')==='on' && !(file instanceof File && file.size)) await api(`/owner/products/${id}/image`,{method:'DELETE'});
+                        toast('Product updated.'); location.reload();
+                    } catch(error){toast(error.message,'error');submit.disabled=false;}
+                };
+            });
+            $$('[data-hide-product]').forEach(button=>button.onclick=async()=>{
+                if(!await askConfirmation('Hide product?','This product will no longer appear in the shop.','Hide product'))return;
+                try{await api(`/owner/products/${button.dataset.hideProduct}`,{method:'DELETE'});toast('Product hidden.');location.reload();}catch(error){toast(error.message,'error');}
             });
         });
     }
 
     if (path.endsWith('/categories.html')) {
-        const data = await api('/owner/categories');
-        const items = data.categories || [];
-
-        return shell('Manage Categories', 'Organise your product categories.', `
-            <section class="panel">
+        const data = await api('/owner/categories'); const items = data.categories || [];
+        const categoryImageField = (prefix, imageUrl='') => `
+            <div class="field full owner-image-field"><span>Category image <small>(JPG, PNG, WEBP or GIF · max 5 MB)</small></span>
+            <input type="file" name="${prefix}Image" accept="image/jpeg,image/png,image/webp,image/gif">
+            <img class="owner-upload-preview ${imageUrl?'':'hidden'}" data-preview="${prefix}" src="${safe(imageUrl)}" alt="Category preview">
+            <button type="button" class="btn btn-light owner-clear-preview" data-clear-preview="${prefix}">Clear selected image</button></div>`;
+        return shell('Manage Categories', 'Create, edit and add images to product categories.', `
+            <section class="panel owner-form-panel"><h2>Add category</h2>
                 <form id="owner-category-form" class="form-grid">
-                    <label class="field">
-                        Category name
-                        <input name="name" required>
-                    </label>
-
-                    <label class="field">
-                        Icon name
-                        <input name="icon" value="package">
-                    </label>
-
-                    <button class="btn btn-primary">Add category</button>
+                    <label class="field">Category name<input name="name" required maxlength="100"></label>
+                    <label class="field">Icon name<input name="icon" value="package" placeholder="package"></label>
+                    ${categoryImageField('new-category')}
+                    <div class="field full owner-item-actions"><button class="btn btn-primary" type="submit">Add category</button><button class="btn btn-light" type="reset">Cancel / Clear</button></div>
                 </form>
             </section>
-
-            ${items.map(c => `
-                <article class="panel">
-                    <h3>${safe(c.name)}</h3>
-                    <p>${safe(c.icon)}</p>
-                    <button class="btn btn-dark"
-                            data-delete-category="${safe(c.id)}">
-                        Delete category
-                    </button>
-                </article>
-            `).join('')}
-        `).then(() => {
-            $('#owner-category-form').onsubmit = async e => {
-                e.preventDefault();
-                const fd = new FormData(e.currentTarget);
-
-                try {
-                    await api('/owner/categories', {
-                        method: 'POST',
-                        body: {
-                            name: fd.get('name'),
-                            icon: fd.get('icon')
-                        }
-                    });
-
-                    toast('Category added.');
-                    location.reload();
-                } catch (error) {
-                    toast(error.message, 'error');
-                }
-            };
-
-            $$('[data-delete-category]').forEach(button => {
-                button.onclick = async () => {
-                    if (!await askConfirmation('Delete category?', 'This action cannot be undone. Continue?', 'Delete category')) return;
-
-                    try {
-                        await api(`/owner/categories/${button.dataset.deleteCategory}`, {
-                            method: 'DELETE'
-                        });
-
-                        toast('Category deleted.');
-                        location.reload();
-                    } catch (error) {
-                        toast(error.message, 'error');
-                    }
-                };
-            });
+            ${items.map(c=>`<article class="panel owner-item-card">
+                <div class="owner-item-heading">${c.image_url?`<img class="owner-item-thumb" src="${safe(c.image_url)}" alt="">`:`<div class="owner-item-thumb owner-item-placeholder">${icon('layers')}</div>`}<div><h3>${safe(c.name)}</h3><p class="muted">Icon: ${safe(c.icon||'package')}</p></div></div>
+                <div class="owner-item-actions"><button class="btn btn-light" type="button" data-edit-category="${safe(c.id)}">Edit category</button><button class="btn btn-dark" type="button" data-delete-category="${safe(c.id)}">Delete category</button></div>
+                <form class="form-grid owner-edit-form hidden" data-category-edit="${safe(c.id)}">
+                    <label class="field">Category name<input name="name" value="${safe(c.name)}" required maxlength="100"></label>
+                    <label class="field">Icon name<input name="icon" value="${safe(c.icon||'package')}"></label>
+                    ${categoryImageField('edit-category-'+c.id,c.image_url||'')}
+                    <label class="field owner-check-field"><input type="checkbox" name="removeImage"> Remove current image</label>
+                    <div class="field full owner-item-actions"><button class="btn btn-primary" type="submit">Save changes</button><button class="btn btn-light" type="button" data-cancel-category="${safe(c.id)}">Cancel</button></div>
+                </form>
+            </article>`).join('') || '<div class="empty">No categories found yet.</div>'}
+        `).then(()=>{
+            const wirePreview=(form,prefix)=>{const input=form.querySelector(`[name="${prefix}Image"]`),preview=form.querySelector(`[data-preview="${prefix}"]`);if(!input||!preview)return;input.onchange=()=>{const file=input.files?.[0];if(!file)return;if(!/^image\/(jpeg|png|webp|gif)$/.test(file.type)||file.size>5*1024*1024){toast('Choose JPG, PNG, WEBP or GIF up to 5 MB.','error');input.value='';return;}preview.src=URL.createObjectURL(file);preview.classList.remove('hidden');};form.querySelector(`[data-clear-preview="${prefix}"]`)?.addEventListener('click',()=>{input.value='';preview.removeAttribute('src');preview.classList.add('hidden');});};
+            const uploadCategoryImage=async(id,file)=>{if(!file)return;const fd=new FormData();fd.append('image',file);await api(`/owner/categories/${id}/image`,{method:'POST',body:fd});};
+            const form=$('#owner-category-form');wirePreview(form,'new-category');form.onreset=()=>setTimeout(()=>{const img=form.querySelector('[data-preview="new-category"]');if(img){img.removeAttribute('src');img.classList.add('hidden');}},0);
+            form.onsubmit=async e=>{e.preventDefault();const fd=new FormData(form);const submit=form.querySelector('[type="submit"]');submit.disabled=true;let created=null;try{created=await api('/owner/categories',{method:'POST',body:{name:fd.get('name'),icon:fd.get('icon')||'package'}});const file=fd.get('new-categoryImage');if(file instanceof File&&file.size)await uploadCategoryImage(created.category.id,file);toast('Category added.');location.reload();}catch(error){if(created){toast('Category was saved, but its image upload failed: '+error.message,'error');setTimeout(()=>location.reload(),1600);}else{toast(error.message,'error');submit.disabled=false;}}};
+            $$('[data-edit-category]').forEach(b=>b.onclick=()=>document.querySelector(`[data-category-edit="${b.dataset.editCategory}"]`)?.classList.toggle('hidden'));
+            $$('[data-cancel-category]').forEach(b=>b.onclick=()=>document.querySelector(`[data-category-edit="${b.dataset.cancelCategory}"]`)?.classList.add('hidden'));
+            $$('[data-category-edit]').forEach(f=>{const id=f.dataset.categoryEdit,prefix='edit-category-'+id;wirePreview(f,prefix);f.onsubmit=async e=>{e.preventDefault();const fd=new FormData(f),submit=f.querySelector('[type="submit"]');submit.disabled=true;try{await api(`/owner/categories/${id}`,{method:'PATCH',body:{name:fd.get('name'),icon:fd.get('icon')||'package'}});const file=fd.get(prefix+'Image');if(file instanceof File&&file.size)await uploadCategoryImage(id,file);if(fd.get('removeImage')==='on' && !(file instanceof File && file.size))await api(`/owner/categories/${id}/image`,{method:'DELETE'});toast('Category updated.');location.reload();}catch(error){toast(error.message,'error');submit.disabled=false;}};});
+            $$('[data-delete-category]').forEach(button=>button.onclick=async()=>{if(!await askConfirmation('Delete category?','Products in this category will remain, but become uncategorised.','Delete category'))return;try{await api(`/owner/categories/${button.dataset.deleteCategory}`,{method:'DELETE'});toast('Category deleted.');location.reload();}catch(error){toast(error.message,'error');}});
         });
     }
 
@@ -2037,118 +2033,75 @@ async function initOwner() {
 ------------------------- */
 
 async function initOwnerSettings() {
-    const keys = [
-        'name', 'suffix', 'motto', 'description',
-        'phone', 'email', 'address', 'latitude', 'longitude', 'bannerImage',
-        'aboutImage', 'socials'
-    ];
-
-    return shell('Store Settings', 'Manage your public shop information.', `
+    const keys = ['name','suffix','motto','description','phone','email','address','latitude','longitude','bannerImage','aboutImage','socials'];
+    return shell('Store Settings', 'Manage your public shop information and location.', `
         <form id="shop-settings" class="panel form-grid">
-
-            <label class="field">
-                Shop name
-                <input name="name" value="${safe(cfg.name)}" required>
-            </label>
-
-            <label class="field">
-                Subtitle
-                <input name="suffix" value="${safe(cfg.suffix)}">
-            </label>
-
-            <label class="field full">
-                Motto
-                <input name="motto" value="${safe(cfg.motto)}">
-            </label>
-
-            <label class="field full">
-                Description
-                <textarea name="description">${safe(cfg.description)}</textarea>
-            </label>
-
-            <label class="field">
-                Phone
-                <input name="phone" value="${safe(cfg.phone)}">
-            </label>
-
-            <label class="field">
-                Email
-                <input name="email" type="email" value="${safe(cfg.email)}">
-            </label>
-
-            <label class="field full">
-                Address
-                <input name="address" value="${safe(cfg.address)}">
-            </label>
-            <label class="field">
-                Map latitude
-                <input name="latitude" type="number" step="any" value="${safe(cfg.latitude || '')}" placeholder="e.g. 26.54">
-            </label>
-            <label class="field">
-                Map longitude
-                <input name="longitude" type="number" step="any" value="${safe(cfg.longitude || '')}" placeholder="e.g. 86.75">
-            </label>
-            <p class="field full muted">Set the shop's map coordinates. Customers will get a Google Maps direction link on the shop information page.</p>
-
-            <label class="field full">
-                Banner image URL
-                <input name="bannerImage" value="${safe(cfg.bannerImage)}">
-            </label>
-
-            <label class="field full">
-                About image URL
-                <input name="aboutImage" value="${safe(cfg.aboutImage)}">
-            </label>
-
-            <h3 class="field full">Social links</h3>
-
-            ${['instagram', 'facebook', 'whatsapp', 'tiktok'].map(key => `
-                <label class="field">
-                    ${safe(key)}
-                    <input name="${key}"
-                           value="${safe(cfg.socials?.[key] || '')}">
-                </label>
-            `).join('')}
-
-            <button class="btn btn-primary" type="submit">
-                Save settings
-            </button>
-
+            <h2 class="field full owner-settings-section">Shop identity</h2>
+            <label class="field">Shop name<input name="name" value="${safe(cfg.name)}" required></label>
+            <label class="field">Subtitle<input name="suffix" value="${safe(cfg.suffix)}"></label>
+            <label class="field full">Motto<input name="motto" value="${safe(cfg.motto)}"></label>
+            <h2 class="field full owner-settings-section">About our shop</h2>
+            <label class="field full">Shop description (shown on About page)<textarea name="description" rows="4">${safe(cfg.description)}</textarea></label>
+            <div class="field full owner-image-field"><span>Homepage banner image</span><input name="bannerImage" value="${safe(cfg.bannerImage)}" placeholder="Image URL"/><input type="file" id="banner-upload" accept="image/jpeg,image/png,image/webp,image/gif"><img class="owner-upload-preview ${cfg.bannerImage?'':'hidden'}" id="banner-preview" src="${safe(cfg.bannerImage)}" alt="Homepage banner preview"><button type="button" class="btn btn-light" data-upload-setting="bannerImage" data-file="banner-upload">Upload banner image</button><small class="muted">Current default is the existing homepage banner. It will not be used as the About image.</small></div>
+            <div class="field full owner-image-field"><span>About page image</span><input name="aboutImage" value="${safe(cfg.aboutImage)}" placeholder="Image URL (optional)"/><input type="file" id="about-upload" accept="image/jpeg,image/png,image/webp,image/gif"><img class="owner-upload-preview ${cfg.aboutImage?'':'hidden'}" id="about-preview" src="${safe(cfg.aboutImage)}" alt="About image preview"><button type="button" class="btn btn-light" data-upload-setting="aboutImage" data-file="about-upload">Upload About image</button></div>
+            <h2 class="field full owner-settings-section">Contact details</h2>
+            <label class="field">Phone<input name="phone" value="${safe(cfg.phone)}"></label>
+            <label class="field">Email<input name="email" type="email" value="${safe(cfg.email)}"></label>
+            <label class="field full">Shop address<input name="address" value="${safe(cfg.address)}"></label>
+            <h2 class="field full owner-settings-section">Shop location on map</h2>
+            <p class="field full muted">Allow location access to centre the map near you, then drag the marker to the exact shop location. You can also tap the map to move the pin.</p>
+            <div class="field full owner-map-actions"><button type="button" class="btn btn-light" id="owner-use-location">Use my current location</button><span class="muted" id="owner-map-status">Map pin can be moved after the map loads.</span></div>
+            <div class="field full"><div id="owner-location-map" class="owner-location-map"></div></div>
+            <label class="field">Map latitude<input name="latitude" id="owner-latitude" type="number" step="any" value="${safe(cfg.latitude||'')}"></label>
+            <label class="field">Map longitude<input name="longitude" id="owner-longitude" type="number" step="any" value="${safe(cfg.longitude||'')}"></label>
+            <h2 class="field full owner-settings-section">Social links</h2>
+            ${['instagram','facebook','whatsapp','tiktok'].map(key=>`<label class="field">${safe(key)} profile/link<input name="${key}" type="url" value="${safe(cfg.socials?.[key]||'')}" placeholder="https://..."></label>`).join('')}
+            <div class="field full owner-item-actions"><button class="btn btn-primary" type="submit">Save settings</button><button class="btn btn-light" type="reset">Cancel / Reset changes</button></div>
         </form>
-    `).then(() => {
-        $('#shop-settings').onsubmit = async e => {
-            e.preventDefault();
-
-            const fd = new FormData(e.currentTarget);
-            const values = Object.fromEntries(fd.entries());
-
-            const socials = {
-                instagram: values.instagram,
-                facebook: values.facebook,
-                whatsapp: values.whatsapp,
-                tiktok: values.tiktok
-            };
-
-            delete values.instagram;
-            delete values.facebook;
-            delete values.whatsapp;
-            delete values.tiktok;
-
-            values.socials = socials;
-
-            try {
-                for (const key of keys) {
-                    await api(`/owner/settings/${key}`, {
-                        method: 'PUT',
-                        body: { value: values[key] ?? '' }
-                    });
-                }
-
-                toast('Shop settings saved.');
-                location.reload();
-            } catch (error) {
-                toast(error.message, 'error');
-            }
+    `).then(async()=>{
+        const form=$('#shop-settings');
+        // Leaflet is loaded only on this owner settings page; the customer storefront is unaffected.
+        const loadLeaflet=()=>new Promise((resolve,reject)=>{
+            if(window.L)return resolve();
+            if(!document.querySelector('#ors-leaflet-css')){const l=document.createElement('link');l.id='ors-leaflet-css';l.rel='stylesheet';l.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';document.head.appendChild(l);}
+            const script=document.createElement('script');script.src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';script.onload=resolve;script.onerror=reject;document.head.appendChild(script);
+        });
+        let map,marker;
+        const latInput=$('#owner-latitude'),lngInput=$('#owner-longitude'),status=$('#owner-map-status');
+        const validCoords=()=>Number.isFinite(Number(latInput.value))&&Number.isFinite(Number(lngInput.value))&&latInput.value!==''&&lngInput.value!=='';
+        const setPin=(lat,lng)=>{latInput.value=Number(lat).toFixed(6);lngInput.value=Number(lng).toFixed(6);if(map){const point=[Number(lat),Number(lng)];marker.setLatLng(point);map.setView(point,16);}};
+        try{
+            await loadLeaflet();
+            const initial=validCoords()?[Number(latInput.value),Number(lngInput.value)]:[20,0];
+            map=L.map('owner-location-map').setView(initial,validCoords()?16:2);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap contributors'}).addTo(map);
+            marker=L.marker(initial,{draggable:true}).addTo(map);
+            marker.on('dragend',()=>{const p=marker.getLatLng();setPin(p.lat,p.lng);status.textContent='Pin position updated. Save settings to keep it.';});
+            map.on('click',e=>{setPin(e.latlng.lat,e.latlng.lng);status.textContent='Pin position updated. Save settings to keep it.';});
+            [latInput,lngInput].forEach(input=>input.addEventListener('change',()=>{if(validCoords())setPin(latInput.value,lngInput.value);}));
+            setTimeout(()=>map.invalidateSize(),250);
+            status.textContent='Drag the pin or tap the map to set the shop location.';
+        }catch(error){status.textContent='Map could not load. You can still enter latitude and longitude manually.';console.warn('Map load:',error);}
+        form.addEventListener('reset',()=>setTimeout(()=>{if(validCoords()&&map)setPin(latInput.value,lngInput.value);},0));
+        $('#owner-use-location').onclick=()=>{
+            if(!navigator.geolocation){toast('Location is not supported by this browser.','error');return;}
+            status.textContent='Waiting for location permission…';
+            navigator.geolocation.getCurrentPosition(pos=>{setPin(pos.coords.latitude,pos.coords.longitude);status.textContent='Current location set as the starting pin. Move it to the shop if needed.';},err=>{status.textContent='Location permission was not granted or location is unavailable. You can move the pin manually.';toast('Could not access your location. Check browser permission.', 'error');},{enableHighAccuracy:true,timeout:12000,maximumAge:0});
+        };
+        $$('[data-upload-setting]').forEach(button=>button.onclick=async()=>{
+            const fileInput=document.getElementById(button.dataset.file),file=fileInput.files?.[0];
+            if(!file){toast('Please choose an image first.','error');return;}
+            if(!/^image\/(jpeg|png|webp|gif)$/.test(file.type)||file.size>5*1024*1024){toast('Choose JPG, PNG, WEBP or GIF up to 5 MB.','error');return;}
+            const fd=new FormData();fd.append('folder','settings');fd.append('image',file);button.disabled=true;
+            try{const uploaded=await api('/owner/upload',{method:'POST',body:fd});form.elements[button.dataset.uploadSetting].value=uploaded.url;const preview=document.getElementById(button.dataset.uploadSetting==='bannerImage'?'banner-preview':'about-preview');preview.src=uploaded.url;preview.classList.remove('hidden');toast('Image uploaded. Save settings to publish it.');}
+            catch(error){toast(error.message,'error');}finally{button.disabled=false;}
+        });
+        form.onsubmit=async e=>{
+            e.preventDefault();const fd=new FormData(form),values=Object.fromEntries(fd.entries());
+            values.socials={instagram:values.instagram,facebook:values.facebook,whatsapp:values.whatsapp,tiktok:values.tiktok};
+            delete values.instagram;delete values.facebook;delete values.whatsapp;delete values.tiktok;
+            try{for(const key of keys){await api(`/owner/settings/${key}`,{method:'PUT',body:{value:values[key]??''}});}toast('Shop settings saved.');location.reload();}
+            catch(error){toast(error.message,'error');}
         };
     });
 }
