@@ -841,6 +841,64 @@ function enhanceCustomSelect(select) {
     sync();
 }
 
+
+const MANUAL_PRODUCT_TAGS = ['New', 'Popular', 'Best Seller', 'Offer', 'Featured'];
+const CATEGORY_ICON_OPTIONS = ['package','book-open','pencil','backpack','palette','trophy','flower-2','calculator','ruler','scissors','paintbrush','notebook-pen','pen-tool','sticky-note','gift','toy-brick','flask-conical','globe','eraser','highlighter','school','briefcase-business','folder','clipboard-list','printer','paperclip','star','shapes','bookmark','box'];
+
+function categoryIconPicker(prefix, selectedIcon = 'package') {
+    const selected = CATEGORY_ICON_OPTIONS.includes(selectedIcon) ? selectedIcon : 'package';
+    return `<div class="field full"><span>Category icon</span><input type="hidden" name="icon" value="${safe(selected)}"><div class="icon-picker" data-icon-picker>${CATEGORY_ICON_OPTIONS.map(name => `<button type="button" class="icon-choice ${name === selected ? 'selected' : ''}" data-icon-choice="${name}" aria-label="${name}" aria-pressed="${name === selected}">${icon(name)}<small>${name}</small></button>`).join('')}</div><small class="muted">Selected icon: <strong data-icon-selected>${safe(selected)}</strong></small></div>`;
+}
+
+function wireCategoryIconPickers(root = document) {
+    root.querySelectorAll('[data-icon-picker]').forEach(picker => {
+        const field = picker.closest('.field');
+        const input = field?.querySelector('input[name="icon"]');
+        const label = field?.querySelector('[data-icon-selected]');
+        if (!input) return;
+        picker.querySelectorAll('[data-icon-choice]').forEach(button => button.addEventListener('click', () => {
+            input.value = button.dataset.iconChoice;
+            if (label) label.textContent = input.value;
+            picker.querySelectorAll('[data-icon-choice]').forEach(option => {
+                const active = option === button;
+                option.classList.toggle('selected', active);
+                option.setAttribute('aria-pressed', String(active));
+            });
+        }));
+    });
+}
+
+function wireOwnerImagePreview(form, prefix) {
+    const input = form?.querySelector(`[name="${prefix}Image"]`);
+    const preview = form?.querySelector(`[data-preview="${prefix}"]`);
+    if (!input || !preview) return;
+    input.onchange = () => {
+        const file = input.files?.[0];
+        if (!file) return;
+        if (!/^image\/(jpeg|png|webp|gif)$/.test(file.type) || file.size > 5 * 1024 * 1024) {
+            toast('Choose JPG, PNG, WEBP or GIF up to 5 MB.', 'error'); input.value = ''; return;
+        }
+        const objectUrl = URL.createObjectURL(file);
+        const image = new Image();
+        image.onload = () => {
+            if (image.width < 500 || image.height < 500) {
+                toast(`Image must be at least 500 × 500 pixels. Selected image is ${image.width} × ${image.height}.`, 'error');
+                input.value = ''; URL.revokeObjectURL(objectUrl); return;
+            }
+            preview.src = objectUrl; preview.classList.remove('hidden');
+        };
+        image.onerror = () => { toast('The selected file is not a valid supported image.', 'error'); input.value = ''; URL.revokeObjectURL(objectUrl); };
+        image.src = objectUrl;
+    };
+    form.querySelector(`[data-clear-preview="${prefix}"]`)?.addEventListener('click', () => { input.value = ''; preview.removeAttribute('src'); preview.classList.add('hidden'); });
+}
+
+function localDateTimeValue(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
 function openProductSuggestionDialog(productName = '') {
     if (!signedIn()) {
         toast('Please sign in to suggest a product.', 'error');
@@ -1524,71 +1582,35 @@ async function initStatic() {
     if (path.endsWith('/suggestions.html')) {
         const data = await api('/public/suggestions');
         const items = data.suggestions || [];
-
+        let likedIds = new Set();
+        if (signedIn()) {
+            try { const likes = await api('/customer/suggestions/likes'); likedIds = new Set((likes.suggestionIds || []).map(String)); }
+            catch (error) { console.warn('Could not load suggestion likes:', error.message); }
+        }
         shell('Suggestions', 'Ideas and requests from our community.', `
-            ${signedIn() ? `
-                <section class="panel">
-                    <h2>Suggest a product</h2>
-
-                    <form id="suggestion-form" class="form-grid" novalidate>
-                        <label class="field full">
-                            Title
-                            <input name="title" required maxlength="120">
-                        </label>
-
-                        <label class="field full">
-                            Details
-                            <textarea name="details" maxlength="1500"></textarea>
-                        </label>
-
-                        <button class="btn btn-primary">Send suggestion</button>
-                    </form>
-                </section>
-            ` : `
-                <p><a href="../customer/login.html">Sign in</a>
-                to submit a suggestion.</p>
-            `}
-
-            ${items.length
-                ? items.map(s => `
-                    <article class="panel">
-                        <h3>${safe(s.title)}</h3>
-                        <p>${safe(s.details)}</p>
-                        <p>${Number(s.likes_count || 0)} likes</p>
-                        ${s.owner_reply
-                            ? `<p><b>Shop reply:</b> ${safe(s.owner_reply)}</p>`
-                            : ''}
-                    </article>
-                `).join('')
-                : emptyState('No suggestions yet', 'Suggestions will appear here.')}
+            ${signedIn() ? `<section class="panel"><h2>Suggest a product</h2><form id="suggestion-form" class="form-grid" novalidate><label class="field full">Title<input name="title" required maxlength="120"></label><label class="field full">Details<textarea name="details" maxlength="1500"></textarea></label><button class="btn btn-primary">Send suggestion</button></form></section>` : `<p><a href="../customer/login.html">Sign in</a> to submit a suggestion or like a public suggestion.</p>`}
+            ${items.length ? items.map(s => {
+                const liked = likedIds.has(String(s.id));
+                return `<article class="panel suggestion-public-card"><h3>${safe(s.title)}</h3><p>${safe(s.details)}</p>${s.owner_reply ? `<p class="suggestion-owner-reply"><b>Shop reply:</b> ${safe(s.owner_reply)}</p>` : ''}<div class="suggestion-public-actions">${signedIn() ? `<button class="btn btn-light suggestion-like-btn ${liked ? 'active' : ''}" type="button" data-suggestion-like="${safe(s.id)}" aria-pressed="${liked}">${icon('thumbs-up')} <span>${liked ? 'Liked' : 'Like'}</span> <strong data-suggestion-likes="${safe(s.id)}">${Number(s.likes_count || 0)}</strong></button>` : `<a class="btn btn-light" href="../customer/login.html">Sign in to like · ${Number(s.likes_count || 0)}</a>`}</div></article>`;
+            }).join('') : emptyState('No suggestions yet', 'Suggestions will appear here.')}
         `);
-
         $('#suggestion-form')?.addEventListener('submit', async e => {
-            e.preventDefault();
-
-            const fd = new FormData(e.currentTarget);
-            if (!String(fd.get('title') || '').trim()) {
-                toast('Please enter a product name before sending.', 'error');
-                e.currentTarget.querySelector('[name="title"]')?.focus();
-                return;
-            }
-
-            try {
-                await api('/customer/suggestions', {
-                    method: 'POST',
-                    body: {
-                        title: fd.get('title'),
-                        details: fd.get('details')
-                    }
-                });
-
-                toast('Suggestion submitted.');
-                location.reload();
-            } catch (error) {
-                toast(error.message, 'error');
-            }
+            e.preventDefault(); const fd = new FormData(e.currentTarget);
+            if (!String(fd.get('title') || '').trim()) { toast('Please enter a product name before sending.', 'error'); e.currentTarget.querySelector('[name="title"]')?.focus(); return; }
+            try { await api('/customer/suggestions', {method:'POST',body:{title:fd.get('title'),details:fd.get('details')}}); toast('Suggestion submitted.'); location.reload(); }
+            catch (error) { toast(error.message, 'error'); }
         });
-
+        $$('[data-suggestion-like]').forEach(button => button.addEventListener('click', async () => {
+            button.disabled = true;
+            try {
+                const result = await api(`/customer/suggestions/${button.dataset.suggestionLike}/like`, {method:'POST'});
+                button.classList.toggle('active', result.liked); button.setAttribute('aria-pressed', String(result.liked));
+                button.querySelector('span').textContent = result.liked ? 'Liked' : 'Like';
+                const count = document.querySelector(`[data-suggestion-likes="${button.dataset.suggestionLike}"]`);
+                if (count) count.textContent = result.likes_count;
+            } catch (error) { toast(error.message, 'error'); }
+            finally { button.disabled = false; }
+        }));
         return;
     }
 
@@ -1729,223 +1751,120 @@ async function initOwner() {
     }
 
     if (path.endsWith('/products.html')) {
-        const [data, categoryData] = await Promise.all([
-            api('/owner/products'), api('/owner/categories')
-        ]);
+        const [data, categoryData] = await Promise.all([api('/owner/products'), api('/owner/categories')]);
         const items = data.products || [];
         const categoryItems = categoryData.categories || [];
-        const categoryOptions = categoryItems.map(c =>
-            `<option value="${safe(c.id)}">${safe(c.name)}</option>`
-        ).join('');
-        const tagText = value => Array.isArray(value) ? value.join(', ') : '';
-        const imageField = (prefix, imageUrl='') => `
-            <div class="field full owner-image-field">
-                <span>Product image <small>(JPG, PNG, WEBP or GIF · max 5 MB)</small></span>
-                <input type="file" name="${prefix}Image" accept="image/jpeg,image/png,image/webp,image/gif">
-                <img class="owner-upload-preview ${imageUrl ? '' : 'hidden'}" data-preview="${prefix}" src="${safe(imageUrl)}" alt="Product preview">
-                <button type="button" class="btn btn-light owner-clear-preview" data-clear-preview="${prefix}">Clear selected image</button>
-            </div>`;
-        const productCard = p => `
-            <article class="panel owner-item-card">
-                <div class="owner-item-heading">
-                    ${p.image_url ? `<img class="owner-item-thumb" src="${safe(p.image_url)}" alt="">` : `<div class="owner-item-thumb owner-item-placeholder">${icon('image')}</div>`}
-                    <div><h3>${safe(p.name)}</h3><p>${money(p.price)} · Stock: ${safe(p.stock_quantity)}</p>
-                    <p class="muted">${safe(categoryItems.find(c=>c.id===p.category_id)?.name || 'Uncategorised')} · Tags: ${safe(tagText(p.manual_tags) || 'None')}</p></div>
-                </div>
-                <div class="owner-item-actions"><button class="btn btn-light" type="button" data-edit-product="${safe(p.id)}">Edit product</button>
-                <button class="btn btn-dark" type="button" data-hide-product="${safe(p.id)}">Hide product</button></div>
-                <form class="form-grid owner-edit-form hidden" data-product-edit="${safe(p.id)}">
-                    <label class="field">Product name<input name="name" value="${safe(p.name)}" required></label>
-                    <label class="field">Price<input name="price" type="number" min="0" step="0.01" value="${safe(p.price)}" required></label>
-                    <label class="field">Category<select name="categoryId"><option value="">No category</option>${categoryItems.map(c=>`<option value="${safe(c.id)}" ${c.id===p.category_id?'selected':''}>${safe(c.name)}</option>`).join('')}</select></label>
-                    <label class="field">Stock quantity<input name="stockQuantity" type="number" min="0" step="1" value="${safe(p.stock_quantity)}"></label>
-                    <label class="field full">Description<textarea name="description">${safe(p.description)}</textarea></label>
-                    <label class="field full">Tags <small>Separate tags with commas</small><input name="tags" value="${safe(tagText(p.manual_tags))}" placeholder="e.g. new, popular, school"></label>
-                    ${imageField('edit-'+p.id,p.image_url || '')}
+        const categoryOptions = categoryItems.map(c => `<option value="${safe(c.id)}">${safe(c.name)}</option>`).join('');
+        const tagOptions = selected => `<option value="">No manual tag</option>${MANUAL_PRODUCT_TAGS.map(tag => `<option value="${tag}" ${tag === selected ? 'selected' : ''}>${tag}</option>`).join('')}`;
+        const imageField = (prefix, imageUrl='') => `<div class="field full owner-image-field"><span>Product image <small>(JPG, PNG, WEBP or GIF · max 5 MB · minimum 500 × 500 px)</small></span><input type="file" name="${prefix}Image" accept="image/jpeg,image/png,image/webp,image/gif"><img class="owner-upload-preview ${imageUrl ? '' : 'hidden'}" data-preview="${prefix}" src="${safe(imageUrl)}" alt="Product preview"><button type="button" class="btn btn-light owner-clear-preview" data-clear-preview="${prefix}">Clear selected image</button></div>`;
+        const productCard = product => {
+            const savedTag = Array.isArray(product.manual_tags) ? product.manual_tags[0] || '' : '';
+            const validTag = MANUAL_PRODUCT_TAGS.includes(savedTag) ? savedTag : '';
+            return `<article class="panel owner-item-card">
+                <div class="owner-item-heading">${product.image_url ? `<img class="owner-item-thumb" src="${safe(product.image_url)}" alt="">` : `<div class="owner-item-thumb owner-item-placeholder">${icon('image')}</div>`}<div><h3>${safe(product.name)}</h3><p>${money(product.price)} · Stock: ${safe(product.stock_quantity)}</p><p class="muted">${safe(categoryItems.find(c=>String(c.id)===String(product.category_id))?.name || 'Uncategorised')} · Manual tag: ${safe(savedTag || 'None')}</p></div></div>
+                <div class="owner-item-actions"><button class="btn btn-light" type="button" data-edit-product="${safe(product.id)}">Edit product</button><button class="btn btn-dark" type="button" data-hide-product="${safe(product.id)}">Hide product</button></div>
+                <form class="form-grid owner-edit-form hidden" data-product-edit="${safe(product.id)}">
+                    <label class="field">Product name<input name="name" value="${safe(product.name)}" required maxlength="180"></label>
+                    <label class="field">Price<input name="price" type="number" min="0" step="0.01" value="${safe(product.price)}" required></label>
+                    <label class="field">Category<select name="categoryId" data-owner-custom-select><option value="">No category</option>${categoryItems.map(c=>`<option value="${safe(c.id)}" ${String(c.id)===String(product.category_id)?'selected':''}>${safe(c.name)}</option>`).join('')}</select></label>
+                    <label class="field">Stock quantity<input name="stockQuantity" type="number" min="0" step="1" value="${safe(product.stock_quantity)}"></label>
+                    <label class="field full">Description<textarea name="description">${safe(product.description)}</textarea></label>
+                    <label class="field full">Manual tag <small>Choose at most one. Automatic tags continue to work separately.</small><select name="tag" data-owner-custom-select>${tagOptions(validTag)}</select></label>
+                    ${!validTag && savedTag ? `<p class="field full muted">This product has an older custom tag (“${safe(savedTag)}”). Choose a new fixed tag or No manual tag when saving.</p>` : ''}
+                    ${imageField('edit-'+product.id,product.image_url || '')}
                     <label class="field owner-check-field"><input type="checkbox" name="removeImage"> Remove current image</label>
-                    <div class="field full owner-item-actions"><button class="btn btn-primary" type="submit">Save changes</button><button class="btn btn-light" type="button" data-cancel-edit="${safe(p.id)}">Cancel</button></div>
+                    <div class="field full owner-item-actions"><button class="btn btn-primary" type="submit">Save changes</button><button class="btn btn-light" type="button" data-cancel-edit="${safe(product.id)}">Cancel</button></div>
                 </form>
             </article>`;
-
+        };
         return shell('Manage Products', 'Add products, images, categories and searchable tags.', `
-            <section class="panel owner-form-panel">
-                <h2>Add product</h2>
-                <form id="owner-product-form" class="form-grid">
-                    <label class="field">Product name<input name="name" required maxlength="180"></label>
-                    <label class="field">Price<input name="price" type="number" min="0" step="0.01" required></label>
-                    <label class="field">Category<select name="categoryId"><option value="">Choose category (optional)</option>${categoryOptions}</select></label>
-                    <label class="field">Stock quantity<input name="stockQuantity" type="number" min="0" step="1" value="0"></label>
-                    <label class="field full">Description<textarea name="description"></textarea></label>
-                    <label class="field full">Tags <small>Separate tags with commas</small><input name="tags" placeholder="e.g. new, popular, school"></label>
-                    ${imageField('new')}
-                    <div class="field full owner-item-actions"><button class="btn btn-primary" type="submit">Add product</button><button class="btn btn-light" type="reset">Cancel / Clear</button></div>
-                </form>
-            </section>
+            <section class="panel owner-form-panel"><h2>Add product</h2><form id="owner-product-form" class="form-grid">
+                <label class="field">Product name<input name="name" required maxlength="180"></label>
+                <label class="field">Price<input name="price" type="number" min="0" step="0.01" required></label>
+                <label class="field">Category<select name="categoryId" data-owner-custom-select><option value="">Choose category (optional)</option>${categoryOptions}</select></label>
+                <label class="field">Stock quantity<input name="stockQuantity" type="number" min="0" step="1" value="0"></label>
+                <label class="field full">Description<textarea name="description"></textarea></label>
+                <label class="field full">Manual tag <small>Choose at most one. Automatic tags continue to work separately.</small><select name="tag" data-owner-custom-select>${tagOptions('')}</select></label>
+                ${imageField('new')}
+                <div class="field full owner-item-actions"><button class="btn btn-primary" type="submit">Add product</button><button class="btn btn-light" type="reset">Cancel / Clear</button></div>
+            </form></section>
             ${items.map(productCard).join('') || '<div class="empty">No products found yet.</div>'}
         `).then(() => {
-            const wirePreview = (form, prefix) => {
-                const input = form.querySelector(`[name="${prefix}Image"]`);
-                const preview = form.querySelector(`[data-preview="${prefix}"]`);
-                if (!input || !preview) return;
-                input.onchange = () => {
-                    const file = input.files?.[0];
-                    if (!file) return;
-                    if (!/^image\/(jpeg|png|webp|gif)$/.test(file.type) || file.size > 5*1024*1024) {
-                        toast('Choose JPG, PNG, WEBP or GIF up to 5 MB.', 'error'); input.value=''; return;
-                    }
-                    preview.src = URL.createObjectURL(file); preview.classList.remove('hidden');
-                };
-                form.querySelector(`[data-clear-preview="${prefix}"]`)?.addEventListener('click', () => { input.value=''; preview.removeAttribute('src'); preview.classList.add('hidden'); });
-            };
-            const uploadProductImage = async (id, file) => {
-                if (!file) return;
-                const fd = new FormData(); fd.append('image', file);
-                await api(`/owner/products/${id}/image`, {method:'POST', body:fd});
-            };
-            const form = $('#owner-product-form'); wirePreview(form, 'new');
+            $$('[data-owner-custom-select]').forEach(enhanceCustomSelect);
+            const form = $('#owner-product-form'); wireOwnerImagePreview(form, 'new');
             form.onreset = () => setTimeout(() => { const img=form.querySelector('[data-preview="new"]'); if(img){img.removeAttribute('src');img.classList.add('hidden');}},0);
+            const uploadProductImage = async (id,file) => { if(!file)return; const fd=new FormData(); fd.append('image',file); await api(`/owner/products/${id}/image`,{method:'POST',body:fd}); };
             form.onsubmit = async e => {
-                e.preventDefault(); const fd = new FormData(form); const submit=form.querySelector('[type="submit"]'); submit.disabled=true;
-                let createdProduct=null;
+                e.preventDefault(); const fd=new FormData(form),submit=form.querySelector('[type="submit"]'); submit.disabled=true; let created=null;
                 try {
-                    createdProduct = await api('/owner/products', {method:'POST', body:{name:fd.get('name'),price:Number(fd.get('price')),categoryId:fd.get('categoryId')||null,stockQuantity:Number(fd.get('stockQuantity')||0),description:fd.get('description'),tags:String(fd.get('tags')||'').split(',').map(x=>x.trim()).filter(Boolean)}});
-                    const file=fd.get('newImage');
-                    if(file instanceof File && file.size) await uploadProductImage(createdProduct.product.id,file);
-                    toast('Product added successfully.'); location.reload();
-                } catch(error) { if(createdProduct){toast('Product was saved, but its image upload failed: '+error.message,'error');setTimeout(()=>location.reload(),1600);}else{toast(error.message, 'error'); submit.disabled=false;} }
+                    const tag=String(fd.get('tag')||'');
+                    created=await api('/owner/products',{method:'POST',body:{name:fd.get('name'),price:Number(fd.get('price')),categoryId:fd.get('categoryId')||null,stockQuantity:Number(fd.get('stockQuantity')||0),description:fd.get('description'),tags:tag?[tag]:[]}});
+                    const file=fd.get('newImage'); if(file instanceof File&&file.size)await uploadProductImage(created.product.id,file);
+                    toast('Product added successfully.');location.reload();
+                }catch(error){if(created){toast('Product was saved, but its image upload failed: '+error.message,'error');setTimeout(()=>location.reload(),1600);}else{toast(error.message,'error');submit.disabled=false;}}
             };
             $$('[data-edit-product]').forEach(button=>button.onclick=()=>document.querySelector(`[data-product-edit="${button.dataset.editProduct}"]`)?.classList.toggle('hidden'));
             $$('[data-cancel-edit]').forEach(button=>button.onclick=()=>document.querySelector(`[data-product-edit="${button.dataset.cancelEdit}"]`)?.classList.add('hidden'));
-            $$('[data-product-edit]').forEach(editForm=>{
-                const id=editForm.dataset.productEdit; wirePreview(editForm, 'edit-'+id);
-                editForm.onsubmit=async e=>{
-                    e.preventDefault(); const fd=new FormData(editForm); const submit=editForm.querySelector('[type="submit"]'); submit.disabled=true;
-                    try {
-                        await api(`/owner/products/${id}`,{method:'PATCH',body:{name:fd.get('name'),price:Number(fd.get('price')),categoryId:fd.get('categoryId')||null,stockQuantity:Number(fd.get('stockQuantity')||0),description:fd.get('description'),tags:String(fd.get('tags')||'').split(',').map(x=>x.trim()).filter(Boolean)}});
-                        const file=fd.get(`edit-${id}Image`); if(file instanceof File && file.size) await uploadProductImage(id,file);
-                        if(fd.get('removeImage')==='on' && !(file instanceof File && file.size)) await api(`/owner/products/${id}/image`,{method:'DELETE'});
-                        toast('Product updated.'); location.reload();
-                    } catch(error){toast(error.message,'error');submit.disabled=false;}
+            $$('[data-product-edit]').forEach(form=>{
+                const id=form.dataset.productEdit; wireOwnerImagePreview(form,'edit-'+id);
+                form.onsubmit=async e=>{
+                    e.preventDefault();const fd=new FormData(form),submit=form.querySelector('[type="submit"]');submit.disabled=true;
+                    try{
+                        const tag=String(fd.get('tag')||'');
+                        await api(`/owner/products/${id}`,{method:'PATCH',body:{name:fd.get('name'),price:Number(fd.get('price')),categoryId:fd.get('categoryId')||null,stockQuantity:Number(fd.get('stockQuantity')||0),description:fd.get('description'),tags:tag?[tag]:[]}});
+                        const file=fd.get(`edit-${id}Image`);if(file instanceof File&&file.size)await uploadProductImage(id,file);
+                        if(fd.get('removeImage')==='on'&&!(file instanceof File&&file.size))await api(`/owner/products/${id}/image`,{method:'DELETE'});
+                        toast('Product updated.');location.reload();
+                    }catch(error){toast(error.message,'error');submit.disabled=false;}
                 };
             });
-            $$('[data-hide-product]').forEach(button=>button.onclick=async()=>{
-                if(!await askConfirmation('Hide product?','This product will no longer appear in the shop.','Hide product'))return;
-                try{await api(`/owner/products/${button.dataset.hideProduct}`,{method:'DELETE'});toast('Product hidden.');location.reload();}catch(error){toast(error.message,'error');}
-            });
+            $$('[data-hide-product]').forEach(button=>button.onclick=async()=>{if(!await askConfirmation('Hide product?','This product will no longer appear in the shop.','Hide product'))return;try{await api(`/owner/products/${button.dataset.hideProduct}`,{method:'DELETE'});toast('Product hidden.');location.reload();}catch(error){toast(error.message,'error');}});
         });
     }
 
     if (path.endsWith('/categories.html')) {
         const data = await api('/owner/categories'); const items = data.categories || [];
-        const categoryImageField = (prefix, imageUrl='') => `
-            <div class="field full owner-image-field"><span>Category image <small>(JPG, PNG, WEBP or GIF · max 5 MB)</small></span>
-            <input type="file" name="${prefix}Image" accept="image/jpeg,image/png,image/webp,image/gif">
-            <img class="owner-upload-preview ${imageUrl?'':'hidden'}" data-preview="${prefix}" src="${safe(imageUrl)}" alt="Category preview">
-            <button type="button" class="btn btn-light owner-clear-preview" data-clear-preview="${prefix}">Clear selected image</button></div>`;
-        return shell('Manage Categories', 'Create, edit and add images to product categories.', `
-            <section class="panel owner-form-panel"><h2>Add category</h2>
-                <form id="owner-category-form" class="form-grid">
-                    <label class="field">Category name<input name="name" required maxlength="100"></label>
-                    <label class="field">Icon name<input name="icon" value="package" placeholder="package"></label>
-                    ${categoryImageField('new-category')}
-                    <div class="field full owner-item-actions"><button class="btn btn-primary" type="submit">Add category</button><button class="btn btn-light" type="reset">Cancel / Clear</button></div>
-                </form>
-            </section>
-            ${items.map(c=>`<article class="panel owner-item-card">
-                <div class="owner-item-heading">${c.image_url?`<img class="owner-item-thumb" src="${safe(c.image_url)}" alt="">`:`<div class="owner-item-thumb owner-item-placeholder">${icon('layers')}</div>`}<div><h3>${safe(c.name)}</h3><p class="muted">Icon: ${safe(c.icon||'package')}</p></div></div>
+        const categoryImageField = (prefix,imageUrl='') => `<div class="field full owner-image-field"><span>Category image <small>(JPG, PNG, WEBP or GIF · max 5 MB · minimum 500 × 500 px)</small></span><input type="file" name="${prefix}Image" accept="image/jpeg,image/png,image/webp,image/gif"><img class="owner-upload-preview ${imageUrl?'':'hidden'}" data-preview="${prefix}" src="${safe(imageUrl)}" alt="Category preview"><button type="button" class="btn btn-light owner-clear-preview" data-clear-preview="${prefix}">Clear selected image</button></div>`;
+        return shell('Manage Categories','Create, edit and add images to product categories.',`
+            <section class="panel owner-form-panel"><h2>Add category</h2><form id="owner-category-form" class="form-grid">
+                <label class="field">Category name<input name="name" required maxlength="100"></label>
+                ${categoryIconPicker('new-category','package')}${categoryImageField('new-category')}
+                <div class="field full owner-item-actions"><button class="btn btn-primary" type="submit">Add category</button><button class="btn btn-light" type="reset">Cancel / Clear</button></div>
+            </form></section>
+            ${items.map(c=>`<article class="panel owner-item-card"><div class="owner-item-heading">${c.image_url?`<img class="owner-item-thumb" src="${safe(c.image_url)}" alt="">`:`<div class="owner-item-thumb owner-item-placeholder">${icon(c.icon||'package')}</div>`}<div><h3>${safe(c.name)}</h3><p class="muted">Icon: ${safe(c.icon||'package')}</p></div></div>
                 <div class="owner-item-actions"><button class="btn btn-light" type="button" data-edit-category="${safe(c.id)}">Edit category</button><button class="btn btn-dark" type="button" data-delete-category="${safe(c.id)}">Delete category</button></div>
-                <form class="form-grid owner-edit-form hidden" data-category-edit="${safe(c.id)}">
-                    <label class="field">Category name<input name="name" value="${safe(c.name)}" required maxlength="100"></label>
-                    <label class="field">Icon name<input name="icon" value="${safe(c.icon||'package')}"></label>
-                    ${categoryImageField('edit-category-'+c.id,c.image_url||'')}
-                    <label class="field owner-check-field"><input type="checkbox" name="removeImage"> Remove current image</label>
-                    <div class="field full owner-item-actions"><button class="btn btn-primary" type="submit">Save changes</button><button class="btn btn-light" type="button" data-cancel-category="${safe(c.id)}">Cancel</button></div>
-                </form>
-            </article>`).join('') || '<div class="empty">No categories found yet.</div>'}
+                <form class="form-grid owner-edit-form hidden" data-category-edit="${safe(c.id)}"><label class="field">Category name<input name="name" value="${safe(c.name)}" required maxlength="100"></label>${categoryIconPicker('edit-category-'+c.id,c.icon||'package')}${categoryImageField('edit-category-'+c.id,c.image_url||'')}
+                    <label class="field owner-check-field"><input type="checkbox" name="removeImage"> Remove current image</label><div class="field full owner-item-actions"><button class="btn btn-primary" type="submit">Save changes</button><button class="btn btn-light" type="button" data-cancel-category="${safe(c.id)}">Cancel</button></div>
+                </form></article>`).join('')||'<div class="empty">No categories found yet.</div>'}
         `).then(()=>{
-            const wirePreview=(form,prefix)=>{const input=form.querySelector(`[name="${prefix}Image"]`),preview=form.querySelector(`[data-preview="${prefix}"]`);if(!input||!preview)return;input.onchange=()=>{const file=input.files?.[0];if(!file)return;if(!/^image\/(jpeg|png|webp|gif)$/.test(file.type)||file.size>5*1024*1024){toast('Choose JPG, PNG, WEBP or GIF up to 5 MB.','error');input.value='';return;}preview.src=URL.createObjectURL(file);preview.classList.remove('hidden');};form.querySelector(`[data-clear-preview="${prefix}"]`)?.addEventListener('click',()=>{input.value='';preview.removeAttribute('src');preview.classList.add('hidden');});};
+            wireCategoryIconPickers();
             const uploadCategoryImage=async(id,file)=>{if(!file)return;const fd=new FormData();fd.append('image',file);await api(`/owner/categories/${id}/image`,{method:'POST',body:fd});};
-            const form=$('#owner-category-form');wirePreview(form,'new-category');form.onreset=()=>setTimeout(()=>{const img=form.querySelector('[data-preview="new-category"]');if(img){img.removeAttribute('src');img.classList.add('hidden');}},0);
-            form.onsubmit=async e=>{e.preventDefault();const fd=new FormData(form);const submit=form.querySelector('[type="submit"]');submit.disabled=true;let created=null;try{created=await api('/owner/categories',{method:'POST',body:{name:fd.get('name'),icon:fd.get('icon')||'package'}});const file=fd.get('new-categoryImage');if(file instanceof File&&file.size)await uploadCategoryImage(created.category.id,file);toast('Category added.');location.reload();}catch(error){if(created){toast('Category was saved, but its image upload failed: '+error.message,'error');setTimeout(()=>location.reload(),1600);}else{toast(error.message,'error');submit.disabled=false;}}};
+            const form=$('#owner-category-form');wireOwnerImagePreview(form,'new-category');
+            form.onreset=()=>setTimeout(()=>{const img=form.querySelector('[data-preview="new-category"]');if(img){img.removeAttribute('src');img.classList.add('hidden');}},0);
+            form.onsubmit=async e=>{e.preventDefault();const fd=new FormData(form),submit=form.querySelector('[type="submit"]');submit.disabled=true;let created=null;try{created=await api('/owner/categories',{method:'POST',body:{name:fd.get('name'),icon:fd.get('icon')||'package'}});const file=fd.get('new-categoryImage');if(file instanceof File&&file.size)await uploadCategoryImage(created.category.id,file);toast('Category added.');location.reload();}catch(error){if(created){toast('Category was saved, but its image upload failed: '+error.message,'error');setTimeout(()=>location.reload(),1600);}else{toast(error.message,'error');submit.disabled=false;}}};
             $$('[data-edit-category]').forEach(b=>b.onclick=()=>document.querySelector(`[data-category-edit="${b.dataset.editCategory}"]`)?.classList.toggle('hidden'));
             $$('[data-cancel-category]').forEach(b=>b.onclick=()=>document.querySelector(`[data-category-edit="${b.dataset.cancelCategory}"]`)?.classList.add('hidden'));
-            $$('[data-category-edit]').forEach(f=>{const id=f.dataset.categoryEdit,prefix='edit-category-'+id;wirePreview(f,prefix);f.onsubmit=async e=>{e.preventDefault();const fd=new FormData(f),submit=f.querySelector('[type="submit"]');submit.disabled=true;try{await api(`/owner/categories/${id}`,{method:'PATCH',body:{name:fd.get('name'),icon:fd.get('icon')||'package'}});const file=fd.get(prefix+'Image');if(file instanceof File&&file.size)await uploadCategoryImage(id,file);if(fd.get('removeImage')==='on' && !(file instanceof File && file.size))await api(`/owner/categories/${id}/image`,{method:'DELETE'});toast('Category updated.');location.reload();}catch(error){toast(error.message,'error');submit.disabled=false;}};});
+            $$('[data-category-edit]').forEach(f=>{const id=f.dataset.categoryEdit,prefix='edit-category-'+id;wireOwnerImagePreview(f,prefix);f.onsubmit=async e=>{e.preventDefault();const fd=new FormData(f),submit=f.querySelector('[type="submit"]');submit.disabled=true;try{await api(`/owner/categories/${id}`,{method:'PATCH',body:{name:fd.get('name'),icon:fd.get('icon')||'package'}});const file=fd.get(prefix+'Image');if(file instanceof File&&file.size)await uploadCategoryImage(id,file);if(fd.get('removeImage')==='on'&&!(file instanceof File&&file.size))await api(`/owner/categories/${id}/image`,{method:'DELETE'});toast('Category updated.');location.reload();}catch(error){toast(error.message,'error');submit.disabled=false;}};});
             $$('[data-delete-category]').forEach(button=>button.onclick=async()=>{if(!await askConfirmation('Delete category?','Products in this category will remain, but become uncategorised.','Delete category'))return;try{await api(`/owner/categories/${button.dataset.deleteCategory}`,{method:'DELETE'});toast('Category deleted.');location.reload();}catch(error){toast(error.message,'error');}});
         });
     }
 
     if (path.endsWith('/reservations.html')) {
-        const data = await api('/owner/reservations');
-        const items = data.reservations || [];
-
-        return shell('Pickup Reservations', 'Manage customer pickup requests.', `
-            ${items.map(r => `
-                <article class="panel">
-                    <h3>${safe(r.product_name || 'Product')}</h3>
-                    <p>Customer: ${safe(r.customer_name || '')}</p>
-                    <p>Quantity: ${safe(r.quantity)}</p>
-                    <p>Status: ${safe(r.status)}</p>
-
-                    ${r.status === 'Request Sent' ? `
-                        <button class="btn btn-primary"
-                                data-reservation-action="approve"
-                                data-id="${safe(r.id)}">Approve</button>
-
-                        <button class="btn btn-dark"
-                                data-reservation-action="decline"
-                                data-id="${safe(r.id)}">Decline</button>
-                    ` : ''}
-
-                    ${r.status === 'Reserved' ? `
-                        <button class="btn btn-primary"
-                                data-reservation-complete="${safe(r.id)}">
-                            Mark completed
-                        </button>
-                    ` : ''}
-                </article>
-            `).join('')}
-        `).then(() => {
-            $$('[data-reservation-action]').forEach(button => {
-                button.onclick = async () => {
-                    const decision = button.dataset.reservationAction;
-
-                    try {
-                        await api(
-                            `/owner/reservations/${button.dataset.id}/decision`,
-                            {
-                                method: 'POST',
-                                body: {
-                                    decision,
-                                    reason: decision === 'decline'
-                                        ? 'Unavailable'
-                                        : ''
-                                }
-                            }
-                        );
-
-                        toast('Reservation updated.');
-                        location.reload();
-                    } catch (error) {
-                        toast(error.message, 'error');
-                    }
-                };
+        const data = await api('/owner/reservations'); const items = data.reservations || [];
+        return shell('Pickup Reservations','Manage customer pickup requests.',`
+            ${items.map(r=>`<article class="panel" data-reservation-card="${safe(r.id)}"><h3>${safe(r.product_name||'Product')}</h3><p>Customer: ${safe(r.customer_name||'')}</p><p>Quantity: ${safe(r.quantity)}</p><p>Status: ${safe(r.status)}</p>
+                ${r.status==='Request Sent'?`<label class="field full reservation-message-field">Optional message for customer<textarea data-reservation-message maxlength="500" placeholder="Add a note for the customer (optional)"></textarea></label><div class="owner-item-actions"><button class="btn btn-primary" data-reservation-action="approve" data-id="${safe(r.id)}">Approve</button><button class="btn btn-dark" data-reservation-action="decline" data-id="${safe(r.id)}">Decline</button></div>`:''}
+                ${r.status==='Reserved'?`<button class="btn btn-primary" data-reservation-complete="${safe(r.id)}">Mark completed</button>`:''}
+                ${r.status==='Declined'&&r.decline_reason?`<p class="muted">Message sent: ${safe(r.decline_reason)}</p>`:''}
+            </article>`).join('')||'<div class="empty">No reservations found.</div>'}
+        `).then(()=>{
+            $$('[data-reservation-action]').forEach(button=>button.onclick=async()=>{
+                const decision=button.dataset.reservationAction,card=button.closest('[data-reservation-card]');
+                const message=String(card?.querySelector('[data-reservation-message]')?.value||'').trim();button.disabled=true;
+                try{await api(`/owner/reservations/${button.dataset.id}/decision`,{method:'POST',body:{decision,message}});toast(decision==='approve'?'Reservation approved.':'Reservation declined.');location.reload();}
+                catch(error){toast(error.message,'error');button.disabled=false;}
             });
-
-            $$('[data-reservation-complete]').forEach(button => {
-                button.onclick = async () => {
-                    try {
-                        await api(
-                            `/owner/reservations/${button.dataset.reservationComplete}/complete`,
-                            { method: 'POST' }
-                        );
-
-                        toast('Reservation completed.');
-                        location.reload();
-                    } catch (error) {
-                        toast(error.message, 'error');
-                    }
-                };
-            });
+            $$('[data-reservation-complete]').forEach(button=>button.onclick=async()=>{try{await api(`/owner/reservations/${button.dataset.reservationComplete}/complete`,{method:'POST'});toast('Reservation completed.');location.reload();}catch(error){toast(error.message,'error');}});
         });
     }
 
@@ -1954,33 +1873,38 @@ async function initOwner() {
     }
 
     if (path.endsWith('/offers.html')) {
-        const data = await api('/owner/offers');
-        const items = data.offers || [];
-
-        return shell('Manage Offers', 'Create and manage shop offers.', `
-            ${items.map(o => `
-                <article class="panel">
-                    <h3>${safe(o.title)}</h3>
-                    <p>${safe(o.description)}</p>
-                    <button class="btn btn-dark"
-                            data-delete-offer="${safe(o.id)}">
-                        Hide offer
-                    </button>
-                </article>
-            `).join('') || '<p>No offers found.</p>'}
-        `).then(() => {
-            $$('[data-delete-offer]').forEach(button => {
-                button.onclick = async () => {
-                    try {
-                        await api(`/owner/offers/${button.dataset.deleteOffer}`, {
-                            method: 'DELETE'
-                        });
-                        location.reload();
-                    } catch (error) {
-                        toast(error.message, 'error');
-                    }
-                };
-            });
+        const [offerData,productData]=await Promise.all([api('/owner/offers'),api('/owner/products')]);
+        const items=offerData.offers||[],productsForOffers=productData.products||[];
+        const productChoices=selectedIds=>productsForOffers.map(product=>`<label class="offer-product-choice"><input type="checkbox" name="productIds" value="${safe(product.id)}" ${selectedIds.map(String).includes(String(product.id))?'checked':''}><span>${safe(product.name)}</span><small>${money(product.price)}</small></label>`).join('')||'<p class="muted">Add products first to attach them to offers. You can still create a general offer.</p>';
+        const offerFields=offer=>{
+            const starts=offer?localDateTimeValue(offer.starts_at):localDateTimeValue(new Date());
+            const ends=offer?localDateTimeValue(offer.ends_at):localDateTimeValue(Date.now()+7*86400000);
+            return `<label class="field">Offer title<input name="title" maxlength="180" required value="${safe(offer?.title||'')}"></label>
+                <label class="field">Discount type<select name="discountType" data-owner-custom-select><option value="percent" ${offer?.discount_type!=='fixed'?'selected':''}>Percentage (%)</option><option value="fixed" ${offer?.discount_type==='fixed'?'selected':''}>Fixed amount (Rs.)</option></select></label>
+                <label class="field">Discount value<input name="discountValue" type="number" min="0.01" step="0.01" required value="${safe(offer?.discount_value||'')}"></label>
+                <label class="field">Starts at<input name="startsAt" type="datetime-local" required value="${starts}"></label>
+                <label class="field">Deadline / Ends at<input name="endsAt" type="datetime-local" required value="${ends}"></label>
+                <label class="field full">Description<textarea name="description" maxlength="3000">${safe(offer?.description||'')}</textarea></label>
+                <div class="field full"><span>Apply to products <small class="muted">Leave all unchecked for a general shop offer.</small></span><div class="offer-product-picker">${productChoices(offer?.product_ids||[])}</div></div>
+                <div class="field full owner-item-actions"><button class="btn btn-primary" type="submit">${offer?'Save offer changes':'Create offer'}</button>${offer?`<button class="btn btn-light" type="button" data-cancel-offer="${safe(offer.id)}">Cancel</button>`:''}</div>`;
+        };
+        const statusOf=offer=>{const now=Date.now();if(offer.is_hidden)return 'Hidden by owner';if(now>new Date(offer.ends_at).getTime())return 'Expired · hidden from public';if(now<new Date(offer.starts_at).getTime())return 'Scheduled';return 'Active · public';};
+        return shell('Manage Offers','Create, edit, extend, hide or permanently delete offers.',`
+            <section class="panel owner-form-panel"><h2>Create offer</h2><form id="owner-offer-form" class="form-grid">${offerFields(null)}</form></section>
+            <h2 class="owner-section-title">All offers</h2>
+            ${items.map(o=>`<article class="panel owner-item-card" data-offer-card="${safe(o.id)}"><div class="owner-item-heading"><div><h3>${safe(o.title)}</h3><p>${safe(o.description||'')}</p><p class="muted">${safe(o.discount_type==='percent'?`${o.discount_value}% off`:`Rs. ${o.discount_value} off`)} · ${statusOf(o)}</p><p class="muted">Deadline: ${safe(new Date(o.ends_at).toLocaleString())}</p></div></div>
+                <div class="owner-item-actions"><button class="btn btn-light" type="button" data-edit-offer="${safe(o.id)}">Edit / Extend deadline</button><button class="btn btn-dark" type="button" data-toggle-offer="${safe(o.id)}" data-hidden="${Boolean(o.is_hidden)}">${o.is_hidden?'Unhide offer':'Hide offer'}</button><button class="btn btn-danger" type="button" data-delete-offer="${safe(o.id)}">Delete permanently</button></div>
+                <form class="form-grid owner-edit-form hidden" data-offer-edit="${safe(o.id)}">${offerFields(o)}</form>
+            </article>`).join('')||'<div class="empty">No offers created yet.</div>'}
+        `).then(()=>{
+            $$('[data-owner-custom-select]').forEach(enhanceCustomSelect);
+            const readOfferForm=form=>{const fd=new FormData(form),start=new Date(fd.get('startsAt')),end=new Date(fd.get('endsAt'));if(Number.isNaN(start.getTime())||Number.isNaN(end.getTime()))throw new Error('Choose valid start and deadline dates.');return {title:fd.get('title'),description:fd.get('description'),discountType:fd.get('discountType'),discountValue:Number(fd.get('discountValue')),startsAt:start.toISOString(),endsAt:end.toISOString(),productIds:fd.getAll('productIds')};};
+            const createForm=$('#owner-offer-form');createForm.onsubmit=async e=>{e.preventDefault();const submit=createForm.querySelector('[type="submit"]');submit.disabled=true;try{await api('/owner/offers',{method:'POST',body:readOfferForm(createForm)});toast('Offer created.');location.reload();}catch(error){toast(error.message,'error');submit.disabled=false;}};
+            $$('[data-edit-offer]').forEach(button=>button.onclick=()=>document.querySelector(`[data-offer-edit="${button.dataset.editOffer}"]`)?.classList.toggle('hidden'));
+            $$('[data-cancel-offer]').forEach(button=>button.onclick=()=>document.querySelector(`[data-offer-edit="${button.dataset.cancelOffer}"]`)?.classList.add('hidden'));
+            $$('[data-offer-edit]').forEach(form=>form.onsubmit=async e=>{e.preventDefault();const submit=form.querySelector('[type="submit"]');submit.disabled=true;try{await api(`/owner/offers/${form.dataset.offerEdit}`,{method:'PATCH',body:readOfferForm(form)});toast('Offer updated.');location.reload();}catch(error){toast(error.message,'error');submit.disabled=false;}});
+            $$('[data-toggle-offer]').forEach(button=>button.onclick=async()=>{const isHidden=button.dataset.hidden==='true';try{await api(`/owner/offers/${button.dataset.toggleOffer}/visibility`,{method:'PATCH',body:{isHidden:!isHidden}});toast(isHidden?'Offer unhidden.':'Offer hidden from public.');location.reload();}catch(error){toast(error.message,'error');}});
+            $$('[data-delete-offer]').forEach(button=>button.onclick=async()=>{if(!await askConfirmation('Delete offer permanently?','This permanently deletes the offer and its product links. This cannot be undone.','Delete permanently'))return;try{await api(`/owner/offers/${button.dataset.deleteOffer}`,{method:'DELETE'});toast('Offer permanently deleted.');location.reload();}catch(error){toast(error.message,'error');}});
         });
     }
 
@@ -1999,17 +1923,18 @@ async function initOwner() {
     }
 
     if (path.endsWith('/suggestions.html')) {
-        const data = await api('/owner/suggestions');
-
-        return shell('Manage Suggestions', 'Review customer suggestions.', `
-            ${(data.suggestions || []).map(s => `
-                <article class="panel">
-                    <h3>${safe(s.title)}</h3>
-                    <p>${safe(s.details)}</p>
-                    <p>Status: ${safe(s.public_status)}</p>
-                </article>
-            `).join('')}
-        `);
+        const data=await api('/owner/suggestions'),items=data.suggestions||[];
+        return shell('Manage Suggestions','Publish, hide, reply to or delete customer suggestions.',`
+            ${items.map(s=>`<article class="panel owner-item-card" data-owner-suggestion="${safe(s.id)}"><h3>${safe(s.title)}</h3><p>${safe(s.details||'')}</p><p class="muted">From: ${safe(s.customer_name||'Shop owner')} · ${Number(s.likes_count||0)} likes</p>
+                <form class="form-grid" data-suggestion-edit="${safe(s.id)}"><label class="field full">Visibility<select name="status" data-owner-custom-select><option value="private" ${s.public_status==='private'?'selected':''}>Private</option><option value="published" ${s.public_status==='published'?'selected':''}>Public</option><option value="hidden" ${s.public_status==='hidden'?'selected':''}>Hidden</option></select></label>
+                    <label class="field full">Owner reply<textarea name="reply" maxlength="1500" placeholder="Write an optional reply to the customer">${safe(s.owner_reply||'')}</textarea></label>
+                    <div class="field full owner-item-actions"><button class="btn btn-primary" type="submit">Save / Publish</button><button class="btn btn-danger" type="button" data-delete-suggestion="${safe(s.id)}">Delete suggestion</button></div>
+                </form></article>`).join('')||'<div class="empty">No suggestions found.</div>'}
+        `).then(()=>{
+            $$('[data-owner-custom-select]').forEach(enhanceCustomSelect);
+            $$('[data-suggestion-edit]').forEach(form=>form.onsubmit=async e=>{e.preventDefault();const fd=new FormData(form),submit=form.querySelector('[type="submit"]');submit.disabled=true;try{await api(`/owner/suggestions/${form.dataset.suggestionEdit}`,{method:'PATCH',body:{status:fd.get('status'),reply:fd.get('reply')}});toast('Suggestion updated.');location.reload();}catch(error){toast(error.message,'error');submit.disabled=false;}});
+            $$('[data-delete-suggestion]').forEach(button=>button.onclick=async()=>{if(!await askConfirmation('Delete suggestion?','This permanently removes the suggestion and its likes.','Delete suggestion'))return;try{await api(`/owner/suggestions/${button.dataset.deleteSuggestion}`,{method:'DELETE'});toast('Suggestion deleted.');location.reload();}catch(error){toast(error.message,'error');}});
+        });
     }
 
     if (path.endsWith('/updates.html')) {
