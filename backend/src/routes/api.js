@@ -3,6 +3,7 @@ const {pool,query}=require('../db');
 const {auth,admin}=require('../middleware');
 const bcrypt=require('bcryptjs');
 const multer=require('multer');
+const imageSize=require('image-size');
 const {upload,remove}=require('../storage/r2');
 
 const storage=multer({
@@ -11,6 +12,17 @@ const storage=multer({
  fileFilter:(req,file,cb)=>cb(null,/^image\/(jpeg|png|webp|gif)$/.test(file.mimetype))
 });
 
+const validateImageDimensions=(req,res,next)=>{
+ if(!req.file)return res.status(400).json({error:'Choose an image (JPG, PNG, WEBP or GIF), max 5 MB.'});
+ try{
+  const dimensions=imageSize(req.file.buffer);
+  if(!dimensions.width||!dimensions.height)return res.status(400).json({error:'Could not read image dimensions. Choose a valid image.'});
+  if(dimensions.width<500||dimensions.height<500)return res.status(400).json({error:`Image must be at least 500 × 500 pixels. Selected image is ${dimensions.width} × ${dimensions.height}.`});
+  next();
+ }catch(error){
+  return res.status(400).json({error:'The selected file is not a valid supported image.'});
+ }
+};
 const wrap=fn=>(req,res,next)=>Promise.resolve(fn(req,res,next)).catch(next);
 const owner=[auth,admin];
 const notify=(uid,title,body,type,id)=>query(
@@ -219,11 +231,19 @@ router.post('/customer/suggestions',auth,wrap(async(req,res)=>{
  res.status(201).json({suggestion:r.rows[0]});
 }));
 
+router.get('/customer/suggestions/likes',auth,wrap(async(req,res)=>{
+ const r=await query('SELECT suggestion_id FROM suggestion_likes WHERE user_id=$1',[req.user.id]);
+ res.json({suggestionIds:r.rows.map(row=>row.suggestion_id)});
+}));
+
 router.post('/customer/suggestions/:id/like',auth,wrap(async(req,res)=>{
+ const suggestion=await query("SELECT 1 FROM suggestions WHERE id=$1 AND public_status='published'",[req.params.id]);
+ if(!suggestion.rowCount)return res.status(404).json({error:'Public suggestion not found.'});
  const x=await query('SELECT 1 FROM suggestion_likes WHERE user_id=$1 AND suggestion_id=$2',[req.user.id,req.params.id]);
  if(x.rowCount)await query('DELETE FROM suggestion_likes WHERE user_id=$1 AND suggestion_id=$2',[req.user.id,req.params.id]);
  else await query('INSERT INTO suggestion_likes(user_id,suggestion_id) VALUES($1,$2) ON CONFLICT DO NOTHING',[req.user.id,req.params.id]);
- res.json({liked:!x.rowCount});
+ const count=await query('SELECT COUNT(*)::int AS likes_count FROM suggestion_likes WHERE suggestion_id=$1',[req.params.id]);
+ res.json({liked:!x.rowCount,likes_count:count.rows[0].likes_count});
 }));
 // ==========================================
 // PICKUP RESERVATIONS
@@ -296,8 +316,7 @@ router.get('/owner/summary',...owner,wrap(async(req,res)=>{
 }));
 
 // Upload product image to Cloudflare R2
-router.post('/owner/products/:id/image',...owner,storage.single('image'),wrap(async(req,res)=>{
- if(!req.file)return res.status(400).json({error:'Choose an image (JPG, PNG, WEBP or GIF), max 5 MB.'});
+router.post('/owner/products/:id/image',...owner,storage.single('image'),validateImageDimensions,wrap(async(req,res)=>{
 
  const key=`products/${Date.now()}-${require('crypto').randomUUID()}`;
  const url=await upload(key,req.file.buffer,req.file.mimetype);
@@ -344,6 +363,13 @@ router.delete('/owner/reviews/:id',...owner,wrap(async(req,res)=>{
 }));
 
 // Product list, create, update and hide
+const allowedManualTags=['New','Popular','Best Seller','Offer','Featured'];
+const cleanManualTags=value=>{
+ const tags=Array.isArray(value)?value:[];
+ const unique=[...new Set(tags.map(tag=>String(tag).trim()).filter(Boolean))];
+ if(unique.length>1||unique.some(tag=>!allowedManualTags.includes(tag)))return null;
+ return unique;
+};
 router.get('/owner/products',...owner,wrap(async(req,res)=>{
  const r=await query('SELECT * FROM products ORDER BY created_at DESC');
  res.json({products:r.rows});
@@ -356,7 +382,9 @@ router.post('/owner/products',...owner,wrap(async(req,res)=>{
   return res.status(400).json({error:'Check product name, price and stock.'});
  }
 
- const r=await query('INSERT INTO products(name,description,price,category_id,stock_quantity,manual_tags) VALUES($1,$2,$3,$4,$5,$6) RETURNING *',[name.trim(),description,+price,categoryId||null,+stockQuantity,Array.isArray(tags)?tags:[]]);
+ const manualTags=cleanManualTags(tags);
+ if(!manualTags)return res.status(400).json({error:'Choose at most one tag from the available list.'});
+ const r=await query('INSERT INTO products(name,description,price,category_id,stock_quantity,manual_tags) VALUES($1,$2,$3,$4,$5,$6) RETURNING *',[name.trim(),description,+price,categoryId||null,+stockQuantity,manualTags]);
 
  res.status(201).json({product:r.rows[0]});
 }));
@@ -379,7 +407,12 @@ router.patch('/owner/products/:id',...owner,wrap(async(req,res)=>{
 
  for(const [k,col] of Object.entries(fields)){
   if(b[k]!==undefined){
-   vals.push(k==='tags'?(Array.isArray(b[k])?b[k]:[]):b[k]);
+   let value=b[k];
+   if(k==='tags'){
+    value=cleanManualTags(value);
+    if(!value)return res.status(400).json({error:'Choose at most one tag from the available list.'});
+   }
+   vals.push(value);
    sets.push(`${col}=$${vals.length}`);
   }
  }
@@ -429,6 +462,12 @@ router.post('/owner/reservations/:id/decision',...owner,wrap(async(req,res)=>{
    return res.status(409).json({error:'Request is no longer pending.'});
   }
 
+  const message=String(req.body.message||req.body.reason||'').trim();
+  if(message.length>500){
+   await c.query('ROLLBACK');
+   return res.status(400).json({error:'Message must be 500 characters or fewer.'});
+  }
+
   if(req.body.decision==='approve'){
    const p=await c.query('SELECT stock_quantity FROM products WHERE id=$1 FOR UPDATE',[r.product_id]);
 
@@ -441,11 +480,13 @@ router.post('/owner/reservations/:id/decision',...owner,wrap(async(req,res)=>{
 
    await c.query('UPDATE products SET stock_quantity=stock_quantity-$1 WHERE id=$2',[r.quantity,r.product_id]);
    await c.query("UPDATE reservations SET status='Reserved',expires_at=NOW()+INTERVAL '24 hours',updated_at=NOW() WHERE id=$1",[r.id]);
-   await c.query("INSERT INTO notifications(user_id,title,body,related_type,related_id) VALUES($1,'Reservation approved','Your item is reserved for physical pickup for 24 hours. Pay at the shop.','reservation',$2)",[r.user_id,r.id]);
+   const approvalBody='Your item is reserved for physical pickup for 24 hours. Pay at the shop.'+(message?'\n\nMessage from the shop: '+message:'');
+   await c.query("INSERT INTO notifications(user_id,title,body,related_type,related_id) VALUES($1,'Reservation approved',$2,'reservation',$3)",[r.user_id,approvalBody,r.id]);
 
   }else if(req.body.decision==='decline'){
-   await c.query("UPDATE reservations SET status='Declined',decline_reason=$2 WHERE id=$1",[r.id,String(req.body.reason||'')]);
-   await c.query('INSERT INTO notifications(user_id,title,body,related_type,related_id) VALUES($1,$2,$3,$4,$5)',[r.user_id,'Reservation declined',String(req.body.reason||'Your request was declined.'),'reservation',r.id]);
+   const declineMessage=message||'Your request was declined.';
+   await c.query("UPDATE reservations SET status='Declined',decline_reason=$2,updated_at=NOW() WHERE id=$1",[r.id,declineMessage]);
+   await c.query('INSERT INTO notifications(user_id,title,body,related_type,related_id) VALUES($1,$2,$3,$4,$5)',[r.user_id,'Reservation declined',declineMessage,'reservation',r.id]);
 
   }else{
    await c.query('ROLLBACK');
@@ -510,7 +551,7 @@ router.post('/owner/reservations/:id/complete',...owner,wrap(async(req,res)=>{
 // ==========================================
 
 router.get('/owner/suggestions',...owner,wrap(async(req,res)=>{
- const r=await query('SELECT s.*,u.name customer_name FROM suggestions s LEFT JOIN users u ON u.id=s.user_id ORDER BY s.created_at DESC');
+ const r=await query('SELECT s.*,u.name customer_name,(SELECT COUNT(*)::int FROM suggestion_likes l WHERE l.suggestion_id=s.id) likes_count FROM suggestions s LEFT JOIN users u ON u.id=s.user_id ORDER BY s.created_at DESC');
  res.json({suggestions:r.rows});
 }));
 
@@ -530,11 +571,13 @@ router.delete('/owner/suggestions/:id',...owner,wrap(async(req,res)=>{
 }));
 
 router.patch('/owner/suggestions/:id',...owner,wrap(async(req,res)=>{
- const {reply='',status='private'}=req.body;
+ const reply=String(req.body.reply||'').trim();
+ const status=String(req.body.status||'private');
 
  if(!['private','published','hidden'].includes(status)){
   return res.status(400).json({error:'Invalid visibility'});
  }
+ if(reply.length>1500)return res.status(400).json({error:'Reply must be 1500 characters or fewer.'});
 
  const r=await query('UPDATE suggestions SET owner_reply=$2,public_status=$3,updated_at=NOW() WHERE id=$1 RETURNING *',[req.params.id,reply,status]);
 
@@ -546,43 +589,67 @@ router.patch('/owner/suggestions/:id',...owner,wrap(async(req,res)=>{
 }));
 
 router.get('/owner/offers',...owner,wrap(async(req,res)=>{
- const r=await query('SELECT * FROM offers ORDER BY created_at DESC');
+ const r=await query(`SELECT o.*,COALESCE(array_agg(op.product_id) FILTER(WHERE op.product_id IS NOT NULL),'{}') product_ids
+ FROM offers o LEFT JOIN offer_products op ON op.offer_id=o.id GROUP BY o.id ORDER BY o.created_at DESC`);
  res.json({offers:r.rows});
 }));
 
-router.post('/owner/offers',...owner,wrap(async(req,res)=>{
- const {title,description='',discountType='percent',discountValue,startsAt,endsAt,productIds=[]}=req.body;
-
- if(!title||!['percent','fixed'].includes(discountType)||+discountValue<=0||(discountType==='percent'&&+discountValue>100)||new Date(endsAt)<=new Date(startsAt)){
-  return res.status(400).json({error:'Invalid offer details.'});
+function validateOffer(body){
+ const title=String(body.title||'').trim();
+ const description=String(body.description||'').trim();
+ const discountType=String(body.discountType||'percent');
+ const discountValue=Number(body.discountValue);
+ const startsAt=new Date(body.startsAt);
+ const endsAt=new Date(body.endsAt);
+ const productIds=Array.isArray(body.productIds)?[...new Set(body.productIds.map(String))]:[];
+ if(!title||title.length>180||description.length>3000||!['percent','fixed'].includes(discountType)||!Number.isFinite(discountValue)||discountValue<=0||(discountType==='percent'&&discountValue>100)||Number.isNaN(startsAt.getTime())||Number.isNaN(endsAt.getTime())||endsAt<=startsAt){
+  return {error:'Check the offer title, discount and start/end dates.'};
  }
+ return {title,description,discountType,discountValue,startsAt:startsAt.toISOString(),endsAt:endsAt.toISOString(),productIds};
+}
 
+router.post('/owner/offers',...owner,wrap(async(req,res)=>{
+ const offer=validateOffer(req.body);
+ if(offer.error)return res.status(400).json({error:offer.error});
  const c=await pool.connect();
-
  try{
   await c.query('BEGIN');
-
-  const r=await c.query('INSERT INTO offers(title,description,discount_type,discount_value,starts_at,ends_at) VALUES($1,$2,$3,$4,$5,$6) RETURNING *',[title,description,discountType,discountValue,startsAt,endsAt]);
-
-  for(const id of productIds){
-   await c.query('INSERT INTO offer_products(offer_id,product_id) VALUES($1,$2) ON CONFLICT DO NOTHING',[r.rows[0].id,id]);
-  }
-
+  const r=await c.query('INSERT INTO offers(title,description,discount_type,discount_value,starts_at,ends_at) VALUES($1,$2,$3,$4,$5,$6) RETURNING *',[offer.title,offer.description,offer.discountType,offer.discountValue,offer.startsAt,offer.endsAt]);
+  for(const id of offer.productIds)await c.query('INSERT INTO offer_products(offer_id,product_id) VALUES($1,$2) ON CONFLICT DO NOTHING',[r.rows[0].id,id]);
   await c.query('COMMIT');
   res.status(201).json({offer:r.rows[0]});
-
- }catch(e){
-  await c.query('ROLLBACK');
-  throw e;
- }finally{
-  c.release();
- }
+ }catch(e){await c.query('ROLLBACK');throw e;}finally{c.release();}
 }));
 
+router.patch('/owner/offers/:id',...owner,wrap(async(req,res)=>{
+ const offer=validateOffer(req.body);
+ if(offer.error)return res.status(400).json({error:offer.error});
+ const c=await pool.connect();
+ try{
+  await c.query('BEGIN');
+  const r=await c.query('UPDATE offers SET title=$1,description=$2,discount_type=$3,discount_value=$4,starts_at=$5,ends_at=$6 WHERE id=$7 RETURNING *',[offer.title,offer.description,offer.discountType,offer.discountValue,offer.startsAt,offer.endsAt,req.params.id]);
+  if(!r.rowCount){await c.query('ROLLBACK');return res.status(404).json({error:'Offer not found.'});}
+  await c.query('DELETE FROM offer_products WHERE offer_id=$1',[req.params.id]);
+  for(const id of offer.productIds)await c.query('INSERT INTO offer_products(offer_id,product_id) VALUES($1,$2) ON CONFLICT DO NOTHING',[req.params.id,id]);
+  await c.query('COMMIT');
+  res.json({offer:r.rows[0]});
+ }catch(e){await c.query('ROLLBACK');throw e;}finally{c.release();}
+}));
+
+router.patch('/owner/offers/:id/visibility',...owner,wrap(async(req,res)=>{
+ const isHidden=Boolean(req.body.isHidden);
+ const r=await query('UPDATE offers SET is_hidden=$1 WHERE id=$2 RETURNING id,is_hidden',[isHidden,req.params.id]);
+ if(!r.rowCount)return res.status(404).json({error:'Offer not found.'});
+ res.json({offer:r.rows[0]});
+}));
+
+// DELETE is intentionally permanent; hiding uses the separate visibility route.
 router.delete('/owner/offers/:id',...owner,wrap(async(req,res)=>{
- await query('UPDATE offers SET is_hidden=TRUE WHERE id=$1',[req.params.id]);
- res.json({hidden:true});
+ const r=await query('DELETE FROM offers WHERE id=$1 RETURNING id',[req.params.id]);
+ if(!r.rowCount)return res.status(404).json({error:'Offer not found.'});
+ res.json({deleted:true});
 }));
+
 // ==========================================
 // OWNER CATEGORY MANAGEMENT
 // List, create, edit, delete and manage images.
@@ -687,10 +754,7 @@ router.delete('/owner/categories/:id',...owner,wrap(async(req,res)=>{
 
 // Upload or replace category image
 // Multipart form field name must be: image
-router.post('/owner/categories/:id/image',...owner,storage.single('image'),wrap(async(req,res)=>{
- if(!req.file){
-  return res.status(400).json({error:'Choose an image (JPG, PNG, WEBP or GIF), max 5 MB.'});
- }
+router.post('/owner/categories/:id/image',...owner,storage.single('image'),validateImageDimensions,wrap(async(req,res)=>{
 
  const old=await query('SELECT image_key FROM categories WHERE id=$1',[req.params.id]);
 
@@ -775,9 +839,6 @@ router.put('/owner/settings/:key',...owner,wrap(async(req,res)=>{
 
 // General image upload to Cloudflare R2
 router.post('/owner/upload',...owner,storage.single('image'),wrap(async(req,res)=>{
- if(!req.file){
-  return res.status(400).json({error:'Choose an image (JPG, PNG, WEBP or GIF), max 5 MB.'});
- }
 
  const folder=['settings','products','categories'].includes(String(req.body.folder||''))?String(req.body.folder):'settings';
  const key=`${folder}/${Date.now()}-${require('crypto').randomUUID()}`;
