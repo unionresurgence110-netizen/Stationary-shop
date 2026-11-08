@@ -166,7 +166,7 @@ html,body{max-width:100%;overflow-x:hidden}
 .product-card{display:flex;flex-direction:column;min-width:0;height:100%;border:1px solid rgba(130,145,185,.24);border-radius:20px;background:var(--surface);overflow:hidden;box-shadow:0 8px 22px rgba(10,20,48,.07);transition:transform .22s ease,box-shadow .22s ease}
 .product-card:hover{transform:translateY(-3px);box-shadow:0 15px 32px rgba(10,20,48,.13)}
 .product-image{height:auto;aspect-ratio:1.18/1;min-height:150px;position:relative;overflow:hidden;background:linear-gradient(145deg,#f5f6ff,#f9ead6);display:grid;place-items:center}
-.product-image>img{width:100%;height:100%;object-fit:contain;display:block}
+.product-image>img{width:100%;height:100%;object-fit:cover;display:block}
 .product-image .product-placeholder{width:100%;height:100%;display:grid;place-items:center}
 .product-image .product-placeholder svg{width:54px;height:54px;stroke-width:1.8}
 .product-category-pill{position:absolute;left:12px;bottom:11px;max-width:calc(100% - 76px);padding:6px 10px;border:1px solid rgba(255,255,255,.8);border-radius:30px;background:rgba(255,255,255,.9);color:#4059a8;font-size:10px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;backdrop-filter:blur(8px)}
@@ -252,7 +252,7 @@ html,body{max-width:100%;overflow-x:hidden}
 
 /* Final card regression guard: keep category and product tags compact pills. */
 .product-image{position:relative;display:block;isolation:isolate;overflow:hidden;aspect-ratio:1.18/1;min-height:0;height:auto}
-.product-image>img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block}
+.product-image>img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
 .product-image>.product-placeholder{position:absolute;inset:0;width:100%;height:100%;display:grid;place-items:center}
 .product-image .product-badges{position:absolute!important;left:12px!important;top:12px!important;right:58px!important;bottom:auto!important;z-index:3;display:flex!important;flex-direction:row!important;flex-wrap:wrap;align-items:flex-start;gap:5px;width:auto!important;height:auto!important;max-width:calc(100% - 72px);writing-mode:horizontal-tb!important;transform:none!important;pointer-events:none}
 .product-image .product-category-pill,.product-image .product-tag-badge{position:static!important;display:inline-flex!important;align-items:center;flex:0 1 auto;width:auto!important;height:auto!important;min-width:0!important;max-width:100%;min-height:0!important;margin:0!important;padding:5px 8px!important;border:1px solid rgba(255,255,255,.78);border-radius:999px!important;background:rgba(23,35,60,.88)!important;color:#f4f6ff!important;font-size:10px!important;font-weight:800;line-height:1.2!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;writing-mode:horizontal-tb!important;transform:none!important;box-shadow:0 3px 10px rgba(10,20,45,.12)}
@@ -407,3 +407,24 @@ html,body{max-width:100%;overflow-x:hidden}
 .dash-links a{border:1px solid var(--line);transition:.18s}
 .dash-links a:hover{border-color:var(--primary2);transform:translateY(-2px)}
 @media(max-width:700px){.stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.stats-grid .stat-card{padding:15px}}
+
+/* Owner dashboard completion controls */
+.icon-picker{display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:8px;max-height:250px;overflow:auto;padding:4px;border:1px solid var(--line);border-radius:13px;background:var(--bg)}
+.icon-choice{min-height:68px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:1px solid transparent;border-radius:10px;background:var(--surface);color:var(--muted);padding:8px 5px}
+.icon-choice svg{width:21px;height:21px}
+.icon-choice small{font-size:10px;line-height:1.2;text-align:center;overflow-wrap:anywhere}
+.icon-choice:hover,.icon-choice.selected{border-color:var(--primary2);background:var(--soft);color:var(--primary2)}
+.suggestion-public-actions{display:flex;align-items:center;gap:10px;margin-top:14px}
+.suggestion-like-btn{display:inline-flex;align-items:center;gap:8px}
+.suggestion-like-btn svg{width:16px;height:16px}
+.suggestion-like-btn.active{background:var(--soft);color:var(--primary2);border-color:var(--primary2)}
+.suggestion-owner-reply{padding:12px 14px;border-left:3px solid var(--primary2);background:var(--soft);border-radius:0 10px 10px 0}
+.offer-product-picker{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;max-height:220px;overflow:auto;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--bg)}
+.offer-product-choice{display:flex;align-items:center;gap:8px;min-width:0;padding:9px 10px;border:1px solid var(--line);border-radius:9px;background:var(--surface);font-size:12px}
+.offer-product-choice input{flex:none}
+.offer-product-choice span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.offer-product-choice small{color:var(--muted);white-space:nowrap}
+.reservation-message-field{margin:14px 0}
+.reservation-message-field textarea{min-height:76px}
+.owner-section-title{font:800 20px Manrope,sans-serif;margin:26px 0 14px}
+@media(max-width:620px){.offer-product-picker{grid-template-columns:1fr}.icon-picker{grid-template-columns:repeat(4,minmax(0,1fr))}}
